@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./bmad.sh:*)",
+      "Bash(cat:*)",
+      "Bash(chmod:*)",
+      "Bash(./verify-setup.sh:*)",
+      "Bash(npm install:*)",
+      "Bash(pnpm install:*)",
+      "Bash(timeout 600 pnpm install)",
+      "Bash(pnpm db:generate:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(docker:*)",
+      "Bash(pnpm dev:*)",
+      "Bash(curl:*)",
+      "Bash(python:*)",
+      "Bash(pnpm add:*)",
+      "Bash(pnpm db:migrate:*)",
+      "Bash(pnpm:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)",
+      "Bash(test:*)",
+      "Bash(npx prisma generate:*)",
+      "Bash(npx prisma migrate dev:*)",
+      "Bash(dir:*)",
+      "Bash(mkdir:*)",
+      "Bash(timeout 10 pnpm dev)",
+      "Bash(timeout 15 pnpm dev)",
+      "Bash(timeout 5 bash -c 'while ! curl -s http://localhost:4000/health > /dev/null; do sleep 1; done')",
+      "Bash(timeout 5 bash -c 'while true; do sleep 1; done')",
+      "Bash(timeout:*)",
+      "Bash(npx prisma:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

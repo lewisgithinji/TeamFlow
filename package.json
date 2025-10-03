@@ -1,0 +1,45 @@
+{
+  "name": "teamflow",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI-powered agile project management platform",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "type-check": "turbo run type-check",
+    "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,md,json}\"",
+    "prepare": "husky install",
+    "db:migrate": "pnpm --filter @teamflow/database db:migrate",
+    "db:seed": "pnpm --filter @teamflow/database db:seed",
+    "db:studio": "pnpm --filter @teamflow/database db:studio",
+    "db:generate": "pnpm --filter @teamflow/database db:generate",
+    "status:update": "node scripts/update-status.mjs",
+    "status:auto": "node scripts/update-status.mjs --auto"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "eslint": "^9.0.0",
+    "husky": "^9.0.0",
+    "lint-staged": "^15.2.0",
+    "prettier": "^3.2.0",
+    "turbo": "^1.11.0",
+    "typescript": "^5.3.0"
+  },
+  "packageManager": "pnpm@8.14.0",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md}": [
+      "prettier --write"
+    ]
+  }
+}

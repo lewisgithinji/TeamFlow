@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Test - TeamFlow</title>
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; }
+        input, button {
+            padding: 10px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        input { width: 100%; box-sizing: border-box; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            width: 100%;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .connected { background: #d4edda; color: #155724; }
+        .disconnected { background: #f8d7da; color: #721c24; }
+        .log {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+        .log-entry {
+            padding: 8px;
+            margin: 5px 0;
+            border-left: 3px solid #007bff;
+            background: white;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .log-entry.success { border-color: #28a745; }
+        .log-entry.error { border-color: #dc3545; }
+        .log-entry.info { border-color: #17a2b8; }
+        .section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+        }
+        .section h3 {
+            margin-top: 0;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔌 WebSocket Server Test</h1>
+
+        <div id="status" class="status disconnected">
+            ❌ Disconnected
+        </div>
+
+        <div class="section">
+            <h3>1. Connect to Server</h3>
+            <input type="text" id="token" placeholder="Enter JWT token (from login)" />
+            <button id="connectBtn" onclick="connect()">Connect</button>
+        </div>
+
+        <div class="section">
+            <h3>2. Join Rooms</h3>
+            <input type="text" id="workspaceId" placeholder="Workspace ID (optional)" />
+            <input type="text" id="projectId" placeholder="Project ID (optional)" />
+            <input type="text" id="taskId" placeholder="Task ID (optional)" />
+            <button onclick="joinRooms()" disabled id="joinBtn">Join Rooms</button>
+        </div>
+
+        <div class="section">
+            <h3>3. Send Events</h3>
+            <button onclick="updatePresence('online')" disabled id="presenceBtn">Set Presence: Online</button>
+            <button onclick="startTyping()" disabled id="typingBtn">Start Typing (in task)</button>
+        </div>
+
+        <div class="section">
+            <h3>Event Log</h3>
+            <button onclick="clearLog()">Clear Log</button>
+            <div id="log" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.insertBefore(entry, logDiv.firstChild);
+        }
+
+        function updateStatus(connected) {
+            const statusDiv = document.getElementById('status');
+            const buttons = ['joinBtn', 'presenceBtn', 'typingBtn'];
+
+            if (connected) {
+                statusDiv.className = 'status connected';
+                statusDiv.textContent = '✅ Connected';
+                buttons.forEach(id => document.getElementById(id).disabled = false);
+            } else {
+                statusDiv.className = 'status disconnected';
+                statusDiv.textContent = '❌ Disconnected';
+                buttons.forEach(id => document.getElementById(id).disabled = true);
+            }
+        }
+
+        function connect() {
+            const token = document.getElementById('token').value.trim();
+
+            if (!token) {
+                alert('Please enter a JWT token first!\n\nTo get a token:\n1. Go to http://localhost:3000\n2. Login or register\n3. Open browser console\n4. Type: localStorage.getItem("token")\n5. Copy the token value');
+                return;
+            }
+
+            if (socket) {
+                socket.disconnect();
+            }
+
+            log('Connecting to WebSocket server...', 'info');
+
+            socket = io('http://localhost:4000', {
+                auth: { token }
+            });
+
+            // Connection events
+            socket.on('connect', () => {
+                log(`✅ Connected! Socket ID: ${socket.id}`, 'success');
+                updateStatus(true);
+            });
+
+            socket.on('disconnect', (reason) => {
+                log(`❌ Disconnected: ${reason}`, 'error');
+                updateStatus(false);
+            });
+
+            socket.on('connect_error', (error) => {
+                log(`❌ Connection error: ${error.message}`, 'error');
+                updateStatus(false);
+            });
+
+            // Server events
+            socket.on('task:created', (data) => {
+                log(`📋 Task created: ${data.taskId}`, 'success');
+                console.log('Task created data:', data);
+            });
+
+            socket.on('task:updated', (data) => {
+                log(`📝 Task updated: ${data.taskId}`, 'success');
+                console.log('Task updated data:', data);
+            });
+
+            socket.on('comment:created', (data) => {
+                log(`💬 Comment created: ${data.commentId}`, 'success');
+                console.log('Comment created data:', data);
+            });
+
+            socket.on('presence:user_online', (data) => {
+                log(`👤 User online: ${data.name}`, 'info');
+                console.log('Presence data:', data);
+            });
+
+            socket.on('presence:user_offline', (data) => {
+                log(`👤 User offline: ${data.name}`, 'info');
+                console.log('Presence data:', data);
+            });
+
+            socket.on('typing:user_typing', (data) => {
+                log(`⌨️  ${data.name} is typing...`, 'info');
+            });
+
+            socket.on('connection:error', (data) => {
+                log(`❌ Server error: ${data.message}`, 'error');
+            });
+        }
+
+        function joinRooms() {
+            if (!socket || !socket.connected) {
+                alert('Connect to server first!');
+                return;
+            }
+
+            const data = {
+                workspaceId: document.getElementById('workspaceId').value || undefined,
+                projectId: document.getElementById('projectId').value || undefined,
+                taskId: document.getElementById('taskId').value || undefined
+            };
+
+            socket.emit('room:join', data);
+            log(`📥 Joining rooms: ${JSON.stringify(data)}`, 'info');
+        }
+
+        function updatePresence(status) {
+            if (!socket || !socket.connected) {
+                alert('Connect to server first!');
+                return;
+            }
+
+            socket.emit('presence:update', { status });
+            log(`👤 Updated presence to: ${status}`, 'success');
+        }
+
+        function startTyping() {
+            const taskId = document.getElementById('taskId').value;
+
+            if (!taskId) {
+                alert('Enter a task ID first!');
+                return;
+            }
+
+            if (!socket || !socket.connected) {
+                alert('Connect to server first!');
+                return;
+            }
+
+            socket.emit('typing:start', { taskId });
+            log(`⌨️  Started typing in task: ${taskId}`, 'success');
+
+            // Auto stop after 3 seconds
+            setTimeout(() => {
+                socket.emit('typing:stop', { taskId });
+                log(`⌨️  Stopped typing in task: ${taskId}`, 'info');
+            }, 3000);
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        // Initial log
+        log('WebSocket test page loaded. Enter JWT token to connect.', 'info');
+        log('API Server should be running on http://localhost:4000', 'info');
+    </script>
+</body>
+</html>

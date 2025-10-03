@@ -1,0 +1,13 @@
+{
+  "recommendations": [
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "bradlc.vscode-tailwindcss",
+    "prisma.prisma",
+    "ms-vscode.vscode-typescript-next",
+    "christian-kohler.path-intellisense",
+    "usernamehw.errorlens",
+    "lokalise.i18n-ally",
+    "eamodio.gitlens"
+  ]
+}

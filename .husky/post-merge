@@ -1,0 +1,6 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Auto-update status after merging/pulling
+echo "🔄 Updating project status..."
+pnpm status:update
