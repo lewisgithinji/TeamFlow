@@ -67,6 +67,7 @@ enum EntityType {
   WORKSPACE
   COMMENT
   SPRINT
+  ATTACHMENT
 }
 
 enum ActivityAction {
@@ -77,6 +78,8 @@ enum ActivityAction {
   COMMENTED
   STATUS_CHANGED
   MOVED
+  ATTACHMENT_ADDED
+  ATTACHMENT_DELETED
 }
 
 enum NotificationType {
@@ -89,6 +92,49 @@ enum NotificationType {
   MEMBER_JOINED
   MEMBER_LEFT
 }
+
+enum AutomationTriggerType {
+  TASK_CREATED
+  TASK_STATUS_CHANGED
+  TASK_ASSIGNED
+  TASK_UNASSIGNED
+  DUE_DATE_APPROACHING
+  DUE_DATE_PASSED
+  PRIORITY_CHANGED
+  COMMENT_ADDED
+  LABEL_ADDED
+  LABEL_REMOVED
+}
+
+enum AutomationActionType {
+  UPDATE_STATUS
+  UPDATE_PRIORITY
+  ASSIGN_USER
+  UNASSIGN_USER
+  ADD_LABEL
+  REMOVE_LABEL
+  ADD_COMMENT
+  SEND_NOTIFICATION
+  SEND_EMAIL
+  WEBHOOK_CALL
+  MOVE_TO_SPRINT
+}
+
+enum AutomationExecutionStatus {
+  SUCCESS
+  FAILED
+  SKIPPED
+  PARTIAL
+}
+
+enum AttachmentStatus {
+  UPLOADING
+  AVAILABLE
+  FAILED
+  DELETED
+  VIRUS_FOUND
+}
+
 
 // =============================================
 // MODELS
@@ -111,6 +157,7 @@ model User {
   lockedUntil          DateTime?
   onboardingCompleted  Boolean  @default(false)
   onboardingStep       Int      @default(0)
+  notificationSettings Json?    @default("{\"taskAssigned\": true, \"mention\": true, \"comment\": true, \"emailOnTaskAssigned\": true, \"emailOnMention\": true, \"emailOnComment\": false}")
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
@@ -121,10 +168,15 @@ model User {
   taskAssignments      TaskAssignee[]
   comments             Comment[]
   activities           Activity[]
-  uploads              Attachment[]
+  uploads              Attachment[]      @relation("UserAttachments")
+  deletedAttachments   Attachment[]      @relation("AttachmentDeleter")
   passwordResets       PasswordReset[]
   sentInvitations      Invitation[]      @relation("InvitationSender")
   notifications        Notification[]
+  automationRules      AutomationRule[]
+  savedFilters         SavedFilter[]     @relation("SavedFilterCreator")
+  slackIntegrations    SlackIntegration[] @relation("SlackIntegrationInstaller")
+  slackPreferences     SlackUserPreference[] @relation("SlackUserPreferences")
 
   @@index([email])
   @@index([provider, providerId])
@@ -150,6 +202,9 @@ model Workspace {
   integrations Integration[]
   activities   Activity[]
   invitations  Invitation[]
+  automationRules AutomationRule[]
+  savedFilters SavedFilter[]
+  slackIntegration SlackIntegration?
 
   @@index([slug])
   @@index([ownerId])
@@ -191,6 +246,7 @@ model Project {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   tasks     Task[]
   sprints   Sprint[]
+  slackChannelMappings SlackChannelMapping[]
 
   @@index([workspaceId, archived])
   @@map("projects")
@@ -208,6 +264,7 @@ model Task {
   createdBy   String?
   position    Int          @default(0)
   version     Int          @default(1)
+  searchVector String?     @db.Text  // PostgreSQL tsvector for full-text search
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -220,7 +277,9 @@ model Task {
   attachments Attachment[]
   subtasks    Subtask[]
   sprints     SprintTask[]
+  automationExecutions AutomationExecution[]
   activities  Activity[]
+  savedFilterTasks SavedFilterTask[]
 
   @@index([projectId, status, position])
   @@index([createdBy])
@@ -350,21 +409,37 @@ model Subtask {
 }
 
 model Attachment {
-  id         String   @id @default(uuid())
-  taskId     String
-  filename   String
-  url        String
-  mimeType   String
-  size       Int
-  uploadedBy String?
-  createdAt  DateTime @default(now())
+  id              String           @id @default(uuid())
+  taskId          String
+  filename        String
+  originalName    String
+  url             String           // Deprecated: kept for backward compatibility
+  storageKey      String
+  mimeType        String
+  size            Int
+  status          AttachmentStatus @default(UPLOADING)
+  uploadedBy      String?
+  thumbnailUrl    String?
+  metadata        Json             @default("{}")
+  checksum        String?
+  virusScanAt     DateTime?
+  virusScanResult String?
+  deletedAt       DateTime?
+  deletedBy       String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   // Relations
-  task     Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  uploader User? @relation(fields: [uploadedBy], references: [id], onDelete: SetNull)
+  task    Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  uploader User? @relation(fields: [uploadedBy], references: [id], onDelete: SetNull, name: "UserAttachments")
+  deleter  User? @relation(fields: [deletedBy], references: [id], onDelete: SetNull, name: "AttachmentDeleter")
 
   @@index([taskId])
   @@index([uploadedBy])
+  @@index([status])
+  @@index([createdAt])
+  @@index([taskId, status])
+  @@index([deletedBy])
   @@map("attachments")
 }
 
@@ -462,4 +537,210 @@ model Notification {
   @@index([userId, isRead])
   @@index([userId, createdAt])
   @@map("notifications")
+}
+
+model AutomationRule {
+  id          String                  @id @default(uuid())
+  workspaceId String
+  workspace   Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  isActive    Boolean                 @default(true)
+
+  // Trigger configuration
+  triggerType   AutomationTriggerType
+  triggerConfig Json                  @default("{}")
+
+  // Actions and execution tracking
+  actions    AutomationAction[]
+  executions AutomationExecution[]
+  lastRunAt  DateTime?
+
+  createdBy String
+  creator   User     @relation(fields: [createdBy], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+  @@index([isActive])
+  @@map("automation_rules")
+}
+
+model AutomationAction {
+  id     String @id @default(uuid())
+  ruleId String
+  rule   AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  order        Int
+  actionType   AutomationActionType
+  actionConfig Json                 @default("{}")
+
+  @@index([ruleId])
+  @@map("automation_actions")
+}
+
+model AutomationExecution {
+  id     String         @id @default(uuid())
+  ruleId String
+  rule   AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  taskId String?
+  task   Task?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  status      AutomationExecutionStatus
+  trigger     Json                      @default("{}")
+  result      Json                      @default("{}")
+  error       String?
+  executedAt  DateTime                  @default(now())
+
+  @@index([ruleId])
+  @@index([taskId])
+  @@index([executedAt])
+  @@map("automation_executions")
+}
+
+model SavedFilter {
+  id          String   @id @default(uuid())
+  workspaceId String
+  name        String
+  description String?
+  createdBy   String
+  isPublic    Boolean  @default(false)
+
+  // Filter criteria stored as JSON
+  filters     Json     @default("{}")
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator   User              @relation("SavedFilterCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+  tasks     SavedFilterTask[]
+
+  @@index([workspaceId, isPublic])
+  @@index([createdBy])
+  @@map("saved_filters")
+}
+
+model SavedFilterTask {
+  id           String   @id @default(uuid())
+  filterId     String
+  taskId       String
+  matchedAt    DateTime @default(now())
+
+  // Relations
+  filter SavedFilter @relation(fields: [filterId], references: [id], onDelete: Cascade)
+  task   Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([filterId, taskId])
+  @@index([filterId])
+  @@index([taskId])
+  @@map("saved_filter_tasks")
+}
+
+// =============================================
+// SLACK INTEGRATION MODELS
+// =============================================
+
+model SlackIntegration {
+  id          String   @id @default(uuid())
+  workspaceId String   @unique
+
+  // Slack OAuth tokens (encrypted)
+  accessToken String   // Encrypted access token
+  botUserId   String   // Slack bot user ID (e.g., U01234567)
+  teamId      String   // Slack team/workspace ID (e.g., T01234567)
+  teamName    String   // Slack workspace name
+
+  // Configuration
+  isActive          Boolean @default(true)
+  defaultChannelId  String? // Default channel for workspace updates
+  defaultChannelName String?
+
+  // Metadata
+  installedBy String
+  installedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  installedByUser   User                  @relation("SlackIntegrationInstaller", fields: [installedBy], references: [id])
+  channelMappings   SlackChannelMapping[]
+  userPreferences   SlackUserPreference[]
+
+  @@index([workspaceId])
+  @@index([teamId])
+  @@map("slack_integrations")
+}
+
+model SlackChannelMapping {
+  id            String   @id @default(uuid())
+  integrationId String
+  projectId     String?  // Optional: map to specific project
+
+  // Slack channel details
+  channelId   String   // Slack channel ID (e.g., C01234567)
+  channelName String   // Slack channel name (e.g., #general)
+  channelType String   // "public", "private", "dm"
+
+  // Notification settings
+  notifyOnAssignment   Boolean @default(true)
+  notifyOnStatusChange Boolean @default(true)
+  notifyOnComment      Boolean @default(true)
+  notifyOnDueDate      Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  integration SlackIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  project     Project?         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([integrationId, channelId])
+  @@index([projectId])
+  @@map("slack_channel_mappings")
+}
+
+model SlackUserPreference {
+  id            String   @id @default(uuid())
+  userId        String
+  integrationId String
+
+  // Slack user mapping
+  slackUserId   String?  // Slack user ID (e.g., U01234567)
+  slackUserName String?  // Slack display name
+
+  // Notification preferences
+  enableDMs          Boolean @default(true)  // Receive personal DMs
+  enableChannelPosts Boolean @default(true)  // See in channel posts
+
+  // Notification frequency
+  frequency String @default("instant") // "instant", "hourly", "daily", "disabled"
+
+  // Event preferences
+  notifyOnAssignment   Boolean @default(true)
+  notifyOnMention      Boolean @default(true)
+  notifyOnStatusChange Boolean @default(true)
+  notifyOnComment      Boolean @default(false)
+  notifyOnDueDate      Boolean @default(true)
+
+  // Quiet hours (optional)
+  quietHoursStart   String?  // "22:00"
+  quietHoursEnd     String?  // "08:00"
+  quietHoursEnabled Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user        User             @relation("SlackUserPreferences", fields: [userId], references: [id], onDelete: Cascade)
+  integration SlackIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, integrationId])
+  @@index([slackUserId])
+  @@map("slack_user_preferences")
 }

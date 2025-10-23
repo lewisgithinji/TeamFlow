@@ -21,7 +21,7 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
 
     // Add user to request object
     // @ts-ignore - extending Request type
-    req.user = { userId: decoded.userId };
+    req.user = { id: decoded.userId };
 
     next();
   } catch (error) {

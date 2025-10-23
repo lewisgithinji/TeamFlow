@@ -1,6 +1,8 @@
 import type { TypedSocket } from './socket.types';
 import { RoomNames } from './socket.types';
 import { canAccessWorkspace, canAccessProject, canAccessTask } from './socket.auth';
+import { redis } from '../redis';
+import { prisma } from '@teamflow/database';
 
 /**
  * Handle room join requests
@@ -42,13 +44,7 @@ export async function handleRoomJoin(
       if (hasAccess) {
         const room = RoomNames.task(data.taskId);
         await socket.join(room);
-        console.log(`📥 ${user.email} joined task room: ${room}`);
-
-        // Emit presence to other users viewing this task
-        socket.to(room).emit('presence:users_viewing', {
-          taskId: data.taskId,
-          users: [], // TODO: Get list of users in room
-        });
+        socket.app.logger.info(`User ${user.email} joined task room`, { room });
       } else {
         socket.emit('connection:error', { message: 'Access denied to task' });
       }
@@ -56,6 +52,42 @@ export async function handleRoomJoin(
   } catch (error) {
     console.error('Error joining room:', error);
     socket.emit('connection:error', { message: 'Failed to join room' });
+  }
+}
+
+/**
+ * Fetches user details for a list of IDs and broadcasts the presence list to a room.
+ * @param taskId The ID of the task.
+ * @param socket The socket instance to broadcast from.
+ */
+export async function broadcastViewingUsers(taskId: string, socket: TypedSocket) {
+  const room = RoomNames.task(taskId);
+  const presenceKey = `presence:task:${taskId}`;
+
+  try {
+    const userIds = await redis.smembers(presenceKey);
+
+    if (userIds.length === 0) {
+      // If no one is viewing, send an empty list
+      socket.server.to(room).emit('presence:users_viewing', { taskId, users: [] });
+      return;
+    }
+
+    // Fetch user details from the database
+    const users = await prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, name: true, avatar: true },
+    });
+
+    const userPresenceList = users.map((u) => ({
+      userId: u.id,
+      name: u.name,
+      avatar: u.avatar,
+    }));
+
+    socket.server.to(room).emit('presence:users_viewing', { taskId, users: userPresenceList });
+  } catch (error) {
+    socket.app.logger.error('Error broadcasting viewing users', { error, taskId });
   }
 }
 
@@ -73,27 +105,26 @@ export async function handleRoomLeave(
     if (data.workspaceId) {
       const room = RoomNames.workspace(data.workspaceId);
       await socket.leave(room);
-      console.log(`📤 ${user.email} left workspace room: ${room}`);
+      socket.app.logger.info(`User ${user.email} left workspace room`, { room });
     }
 
     // Leave project room
     if (data.projectId) {
       const room = RoomNames.project(data.projectId);
       await socket.leave(room);
-      console.log(`📤 ${user.email} left project room: ${room}`);
+      socket.app.logger.info(`User ${user.email} left project room`, { room });
     }
 
     // Leave task room
     if (data.taskId) {
       const room = RoomNames.task(data.taskId);
       await socket.leave(room);
-      console.log(`📤 ${user.email} left task room: ${room}`);
+      socket.app.logger.info(`User ${user.email} left task room`, { room });
 
-      // Notify others that user stopped viewing
-      socket.to(room).emit('presence:users_viewing', {
-        taskId: data.taskId,
-        users: [], // TODO: Get updated list of users in room
-      });
+      // If the user was viewing this task, remove them from the presence list
+      if (socket.data.viewingTaskId === data.taskId) {
+        await handlePresenceViewing(socket, { taskId: null }); // Pass null to signify leaving
+      }
     }
   } catch (error) {
     console.error('Error leaving room:', error);
@@ -118,27 +149,64 @@ export function handlePresenceUpdate(
       timestamp: new Date().toISOString(),
     });
 
-    console.log(`👤 ${user.email} presence: ${data.status}`);
+    socket.app.logger.info(`User ${user.email} presence updated`, { status: data.status });
   } catch (error) {
     console.error('Error updating presence:', error);
   }
 }
 
 /**
- * Handle user viewing a task
+ * Handles a user starting or stopping to view a task.
+ * Manages the presence state in Redis and broadcasts updates.
  */
-export function handlePresenceViewing(socket: TypedSocket, data: { taskId: string }) {
+export async function handlePresenceViewing(
+  socket: TypedSocket,
+  data: { taskId: string | null } // null means user stopped viewing
+) {
   try {
-    const user = socket.data;
-    const room = RoomNames.task(data.taskId);
+    const { userId } = socket.data;
+    const oldTaskId = socket.data.viewingTaskId;
+    const newTaskId = data.taskId;
 
-    // Notify others in the task room
-    socket.to(room).emit('presence:users_viewing', {
-      taskId: data.taskId,
-      users: [], // TODO: Get list of users viewing this task
-    });
+    // If user was viewing a task, remove them from the old presence set
+    if (oldTaskId) {
+      const oldPresenceKey = `presence:task:${oldTaskId}`;
+      await redis.srem(oldPresenceKey, userId);
+      socket.data.viewingTaskId = undefined;
+      // Broadcast the update to the old room
+      await broadcastViewingUsers(oldTaskId, socket);
+    }
 
-    console.log(`👁️ ${user.email} viewing task: ${data.taskId}`);
+    // If user is starting to view a new task, add them to the new presence set
+    if (newTaskId) {
+      const newPresenceKey = `presence:task:${newTaskId}`;
+      await redis.sadd(newPresenceKey, userId);
+      socket.data.viewingTaskId = newTaskId;
+      // Broadcast the update to the new room
+      await broadcastViewingUsers(newTaskId, socket);
+    }
+
+    socket.app.logger.info(`User ${userId} presence viewing updated`, { oldTaskId, newTaskId });
+  } catch (error) {
+    socket.app.logger.error('Error handling presence viewing', { error });
+  }
+}
+
+/**
+ * Handles socket disconnection by cleaning up presence state.
+ */
+export async function handleDisconnect(socket: TypedSocket) {
+  try {
+    const { userId, viewingTaskId } = socket.data;
+
+    // If the user was viewing a task, remove them from the presence list
+    if (viewingTaskId) {
+      const presenceKey = `presence:task:${viewingTaskId}`;
+      await redis.srem(presenceKey, userId);
+      // Broadcast the final update to the room
+      await broadcastViewingUsers(viewingTaskId, socket);
+      socket.app.logger.info(`Cleaned up presence for ${userId} from task ${viewingTaskId}`);
+    }
   } catch (error) {
     console.error('Error handling presence viewing:', error);
   }
@@ -164,7 +232,7 @@ export function handleTypingStart(
       timestamp: new Date().toISOString(),
     });
 
-    console.log(`⌨️ ${user.email} typing in task: ${data.taskId}`);
+    socket.app.logger.info(`User ${user.email} started typing`, { task: data.taskId });
   } catch (error) {
     console.error('Error handling typing start:', error);
   }
@@ -190,7 +258,7 @@ export function handleTypingStop(
       timestamp: new Date().toISOString(),
     });
 
-    console.log(`⌨️ ${user.email} stopped typing in task: ${data.taskId}`);
+    socket.app.logger.info(`User ${user.email} stopped typing`, { task: data.taskId });
   } catch (error) {
     console.error('Error handling typing stop:', error);
   }

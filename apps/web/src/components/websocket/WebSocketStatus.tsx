@@ -1,8 +1,9 @@
 'use client';
 
 import { useWebSocket } from '@/lib/websocket';
+import { useEffect, useState } from 'react';
 
-export function WebSocketStatus() {
+function WebSocketStatusInner() {
   const { connectionStatus, isConnected, error } = useWebSocket();
 
   // Don't show anything when connected (clean UI)
@@ -46,4 +47,20 @@ export function WebSocketStatus() {
       </div>
     </div>
   );
+}
+
+export function WebSocketStatus() {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Don't render until mounted on client
+  if (!mounted) {
+    return null;
+  }
+
+  // Return the inner component wrapped in error boundary
+  return <WebSocketStatusInner />;
 }

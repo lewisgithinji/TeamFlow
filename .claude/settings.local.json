@@ -30,7 +30,22 @@
       "Bash(timeout 5 bash -c 'while ! curl -s http://localhost:4000/health > /dev/null; do sleep 1; done')",
       "Bash(timeout 5 bash -c 'while true; do sleep 1; done')",
       "Bash(timeout:*)",
-      "Bash(npx prisma:*)"
+      "Bash(npx prisma:*)",
+      "Bash(ls:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx next:*)",
+      "Bash(psql:*)",
+      "Bash(where psql)",
+      "Bash(node:*)",
+      "Bash(tasklist:*)",
+      "Bash(npx tsx:*)",
+      "Bash(find:*)",
+      "Bash(cmd /c \"taskkill /PID 33700 /F\")",
+      "Bash(powershell -Command:*)",
+      "Bash(cmd /c \"taskkill /PID 30484 /F\")",
+      "Bash(cmd /c \"taskkill /PID 12832 /F\")",
+      "Bash(git add:*)",
+      "Bash(git reset:*)"
     ],
     "deny": [],
     "ask": []

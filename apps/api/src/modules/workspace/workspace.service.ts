@@ -272,3 +272,43 @@ export async function deleteWorkspace(workspaceId: string, userId: string) {
 
   return { message: 'Workspace deleted successfully' };
 }
+
+/**
+ * Get workspace members
+ * GET /api/workspaces/:workspaceId/members
+ */
+export async function getWorkspaceMembers(workspaceId: string, userId: string) {
+  // Verify user has access to this workspace
+  const membership = await prisma.workspaceMember.findFirst({
+    where: {
+      workspaceId,
+      userId,
+    },
+  });
+
+  if (!membership) {
+    throw new Error('You do not have access to this workspace');
+  }
+
+  // Fetch all members with user details
+  const members = await prisma.workspaceMember.findMany({
+    where: {
+      workspaceId,
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          avatar: true,
+        },
+      },
+    },
+    orderBy: {
+      joinedAt: 'asc',
+    },
+  });
+
+  return members;
+}

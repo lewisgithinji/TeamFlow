@@ -18,6 +18,7 @@ export function NotificationDropdown() {
     markAsRead,
     markAllAsRead,
     deleteNotification,
+    deleteAllNotifications,
   } = useNotificationStore();
 
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
@@ -131,14 +132,28 @@ export function NotificationDropdown() {
           <div className="p-4 border-b border-gray-200">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-semibold text-gray-900">Notifications</h3>
-              {unreadCount > 0 && (
-                <button
-                  onClick={markAllAsRead}
-                  className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-                >
-                  Mark all read
-                </button>
-              )}
+              <div className="flex items-center gap-4">
+                {unreadCount > 0 && (
+                  <button
+                    onClick={markAllAsRead}
+                    className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Mark all read
+                  </button>
+                )}
+                {notifications.length > 0 && (
+                  <button
+                    onClick={() => {
+                      if (confirm('Are you sure you want to clear all notifications?')) {
+                        deleteAllNotifications();
+                      }
+                    }}
+                    className="text-sm text-red-500 hover:text-red-600 font-medium"
+                  >
+                    Clear All
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Filter Tabs */}
@@ -162,9 +177,7 @@ export function NotificationDropdown() {
                 }`}
               >
                 Unread
-                {unreadCount > 0 && (
-                  <span className="ml-1 text-xs">({unreadCount})</span>
-                )}
+                {unreadCount > 0 && <span className="ml-1 text-xs">({unreadCount})</span>}
               </button>
             </div>
           </div>

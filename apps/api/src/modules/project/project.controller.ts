@@ -13,7 +13,7 @@ import * as projectService from './project.service';
  */
 export async function createProject(req: Request, res: Response, next: NextFunction) {
   try {
-    const userId = req.user?.userId;
+    const userId = req.user?.id;
     const { workspaceId, name, description, icon, visibility } = req.body;
 
     if (!userId) {
@@ -56,7 +56,7 @@ export async function listWorkspaceProjects(
   next: NextFunction
 ) {
   try {
-    const userId = req.user?.userId;
+    const userId = req.user?.id;
     const { workspaceId } = req.params;
 
     if (!userId) {
@@ -82,7 +82,7 @@ export async function listWorkspaceProjects(
  */
 export async function getProjectById(req: Request, res: Response, next: NextFunction) {
   try {
-    const userId = req.user?.userId;
+    const userId = req.user?.id;
     const { id } = req.params;
 
     if (!userId) {
@@ -108,7 +108,7 @@ export async function getProjectById(req: Request, res: Response, next: NextFunc
  */
 export async function updateProject(req: Request, res: Response, next: NextFunction) {
   try {
-    const userId = req.user?.userId;
+    const userId = req.user?.id;
     const { id } = req.params;
     const { name, description, icon, visibility, archived } = req.body;
 
@@ -142,7 +142,7 @@ export async function updateProject(req: Request, res: Response, next: NextFunct
  */
 export async function deleteProject(req: Request, res: Response, next: NextFunction) {
   try {
-    const userId = req.user?.userId;
+    const userId = req.user?.id;
     const { id } = req.params;
 
     if (!userId) {

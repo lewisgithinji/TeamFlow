@@ -1,7 +1,7 @@
 # TeamFlow - Current Project State
 
-**Last Updated:** 2025-10-02
-**Status:** Development - Phase 1 (Authentication) Complete
+**Last Updated:** 2025-10-03
+**Status:** Development - Sprint 2 In Progress
 
 ## 🎯 What's Working Now
 
@@ -11,6 +11,7 @@
 - Redis cache running (localhost:6379)
 - Backend API running (http://localhost:4000)
 - Frontend web app running (http://localhost:3001)
+- Structured logging with Winston is implemented.
 - Prisma ORM configured with full schema
 
 ### ✅ Authentication System
@@ -51,6 +52,33 @@
 
 - `utils/jwt.ts` - Token generation/verification
 - `utils/hash.ts` - Password hashing with bcrypt
+
+### ✅ Task Management System
+
+**Location:** `apps/api/src/modules/task/`
+
+**Endpoints Working:**
+
+- `GET /api/tasks/project/:projectId` - Get all tasks for a project
+- `GET /api/tasks/:taskId` - Get a single task
+- `POST /api/tasks` - Create a new task
+- `PATCH /api/tasks/:taskId` - Update a task
+- `DELETE /api/tasks/:taskId` - Delete a task
+
+**Authorization:**
+
+- All endpoints are protected and require authentication.
+- **Workspace Membership**: Users can only access tasks within workspaces they are members of.
+- **Role-Based Access Control (RBAC)**: Deleting tasks is restricted to `OWNER` and `ADMIN` roles.
+- **Ownership-Based Access**: The original creator of a task is also allowed to delete it.
+
+### ✅ Real-time Backend
+
+**Location:** `apps/api/src/websocket/`
+
+- WebSocket server is fully implemented with Socket.io and a Redis adapter for scaling.
+- JWT-based authentication for secure connections.
+- Room-based architecture is in place for broadcasting events.
 
 ### ✅ Database Schema
 
@@ -96,18 +124,12 @@
 - Email verification not implemented
 - Password reset emails not sent
 - Welcome emails not sent
-
-### ❌ Additional Auth Features
-
-- Email verification flow (tokens exist in DB but not used)
-- Password reset endpoint
 - OAuth (Google/GitHub) integration
 - Refresh token endpoint
 - Logout endpoint
 
 ### ❌ Workspace Features
 
-- Workspace creation UI
 - Workspace switching
 - Workspace settings
 - Member invitations
@@ -115,18 +137,10 @@
 ### ❌ Task Management
 
 - Task CRUD endpoints
-- Kanban board UI
+- Kanban board UI integration with backend
 - Drag-and-drop functionality
-- Task assignment
-- Comments on tasks
-- Labels management
-
-### ❌ Real-time Features
-
-- WebSocket setup
-- Live task updates
-- User presence
-- Notifications
+- Real-time UI updates for tasks and comments
+- User presence and typing indicators on the frontend
 
 ---
 

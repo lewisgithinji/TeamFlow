@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { CommentList } from '@/components/comment';
+import { AttachmentList } from '@/components/attachment';
 
 interface Task {
   id: string;
@@ -76,6 +77,14 @@ export function TaskDetailModal({ task, isOpen, onClose, currentUserId }: TaskDe
                       </span>
                     </div>
                   </div>
+                </div>
+
+                {/* Attachments Section */}
+                <div className="border-t-4 border-green-500 pt-6 mt-6 bg-green-50 p-4 rounded">
+                  <AttachmentList
+                    taskId={task.id}
+                    currentUserId={currentUserId}
+                  />
                 </div>
 
                 {/* Comments Section */}

@@ -1,121 +1,25 @@
 'use client';
 
-import { useEffect, useState, Fragment } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { useWorkspaceStore } from '@/stores/workspace.store';
-import WorkspaceSwitcher from '@/components/workspace/WorkspaceSwitcher';
-import CreateWorkspaceModal from '@/components/workspace/CreateWorkspaceModal';
 import ProjectList from '@/components/project/ProjectList';
 import CreateProjectModal from '@/components/project/CreateProjectModal';
-import { NotificationDropdown } from '@/components/notifications';
 import { ActivityFeed } from '@/components/activity';
 
 export default function DashboardPage() {
-  const router = useRouter();
-  const [user, setUser] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isCreateWorkspaceModalOpen, setIsCreateWorkspaceModalOpen] = useState(false);
   const [isCreateProjectModalOpen, setIsCreateProjectModalOpen] = useState(false);
-  const [isMounted, setIsMounted] = useState(false);
 
-  const { workspaces, currentWorkspace, fetchWorkspaces } = useWorkspaceStore();
-
-  // Handle client-side mounting
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (!isMounted) return;
-
-    const token = localStorage.getItem('token');
-
-    if (!token) {
-      router.push('/login');
-      return;
-    }
-
-    // Fetch current user
-    fetch('http://localhost:4000/api/auth/me', {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-    })
-      .then(res => {
-        if (!res.ok) {
-          throw new Error('Unauthorized');
-        }
-        return res.json();
-      })
-      .then(data => {
-        setUser(data.user);
-        setIsLoading(false);
-        // Fetch workspaces after user is loaded
-        fetchWorkspaces();
-      })
-      .catch(() => {
-        localStorage.removeItem('token');
-        router.push('/login');
-      });
-  }, [router, fetchWorkspaces, isMounted]);
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    router.push('/login');
-  };
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-gray-600">Loading...</div>
-      </div>
-    );
-  }
+  const { workspaces, currentWorkspace } = useWorkspaceStore();
 
   return (
-    <div>
-      <CreateWorkspaceModal
-        isOpen={isCreateWorkspaceModalOpen}
-        onClose={() => setIsCreateWorkspaceModalOpen(false)}
-      />
+    <>
       <CreateProjectModal
         isOpen={isCreateProjectModalOpen}
         onClose={() => setIsCreateProjectModalOpen(false)}
         workspaceId={currentWorkspace?.id || ''}
       />
 
-      <div className="min-h-screen bg-gray-50">
-        <nav className="bg-white shadow-sm">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between h-16">
-              <div className="flex items-center space-x-4">
-                <h1 className="text-xl font-bold text-gray-900">TeamFlow</h1>
-                <WorkspaceSwitcher onCreateNew={() => setIsCreateWorkspaceModalOpen(true)} />
-              </div>
-              <div className="flex items-center space-x-4">
-                <span className="text-sm text-gray-700">
-                  Welcome, {user?.name}
-                </span>
-                <NotificationDropdown />
-                <button
-                  onClick={() => router.push('/settings')}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900"
-                >
-                  Settings
-                </button>
-                <button
-                  onClick={handleLogout}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900"
-                >
-                  Logout
-                </button>
-              </div>
-            </div>
-          </div>
-        </nav>
-
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="px-4 py-6 sm:px-0 space-y-6">
+      <div className="space-y-6">
           {/* Stats Cards */}
           <div className="bg-white shadow rounded-lg p-6">
             <h2 className="text-2xl font-bold text-gray-900 mb-4">
@@ -186,15 +90,13 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Activity Feed Section */}
-          {currentWorkspace && (
-            <div className="bg-white shadow rounded-lg p-6">
-              <ActivityFeed workspaceId={currentWorkspace.id} showFilters={true} />
-            </div>
-          )}
-        </div>
-      </main>
+        {/* Activity Feed Section */}
+        {currentWorkspace && (
+          <div className="bg-white shadow rounded-lg p-6">
+            <ActivityFeed workspaceId={currentWorkspace.id} showFilters={true} />
+          </div>
+        )}
       </div>
-    </div>
+    </>
   );
 }

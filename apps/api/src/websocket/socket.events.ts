@@ -1,174 +1,100 @@
+import type { AttachmentEvent, NotificationEvent, TaskEvent } from '@teamflow/types';
 import { getSocketServer } from './socket.server';
 import { RoomNames } from './socket.types';
-import type {
-  TaskEvent,
-  CommentEvent,
-  MemberEvent,
-} from './socket.types';
 
 /**
- * Event emitter utilities for real-time updates
- * These functions are called from service layers to broadcast events
+ * Emits a 'notification:new' event to a specific user's room.
+ * @param notification - The notification object to send.
  */
-
-/**
- * Emit task created event
- */
-export function emitTaskCreated(event: TaskEvent): void {
+export function emitNotification(notification: NotificationEvent['notification']) {
   try {
     const io = getSocketServer();
-    const room = RoomNames.project(event.projectId);
-
-    io.to(room).emit('task:created', event);
-
-    console.log(`📤 Emitted task:created to project ${event.projectId}`);
+    io.to(RoomNames.user(notification.userId)).emit('notification:new', notification);
   } catch (error) {
-    console.error('Error emitting task:created event:', error);
+    console.error('Failed to emit notification:new event', {
+      error,
+      userId: notification.userId,
+    });
   }
 }
 
 /**
- * Emit task updated event
+ * Emits an 'attachment:added' event to the project room
+ * @param data - Attachment event data
  */
-export function emitTaskUpdated(event: TaskEvent): void {
+export function emitAttachmentAdded(data: AttachmentEvent) {
   try {
     const io = getSocketServer();
-    const taskRoom = RoomNames.task(event.taskId);
-    const projectRoom = RoomNames.project(event.projectId);
-
-    // Emit to both task and project rooms
-    io.to(taskRoom).to(projectRoom).emit('task:updated', event);
-
-    console.log(`📤 Emitted task:updated for task ${event.taskId}`);
+    io.to(RoomNames.project(data.projectId)).emit('attachment:added', data);
   } catch (error) {
-    console.error('Error emitting task:updated event:', error);
+    console.error('Failed to emit attachment:added event', {
+      error,
+      attachmentId: data.attachmentId,
+      taskId: data.taskId,
+    });
   }
 }
 
 /**
- * Emit task deleted event
+ * Emits an 'attachment:deleted' event to the project room
+ * @param data - Attachment deletion event data
  */
-export function emitTaskDeleted(event: TaskEvent): void {
+export function emitAttachmentDeleted(data: AttachmentEvent) {
   try {
     const io = getSocketServer();
-    const projectRoom = RoomNames.project(event.projectId);
-
-    io.to(projectRoom).emit('task:deleted', event);
-
-    console.log(`📤 Emitted task:deleted for task ${event.taskId}`);
+    io.to(RoomNames.project(data.projectId)).emit('attachment:deleted', data);
   } catch (error) {
-    console.error('Error emitting task:deleted event:', error);
+    console.error('Failed to emit attachment:deleted event', {
+      error,
+      attachmentId: data.attachmentId,
+    });
   }
 }
 
 /**
- * Emit task moved event (status change)
+ * Emits a 'task:created' event to the project room.
+ * @param data - Task creation event data.
  */
-export function emitTaskMoved(event: TaskEvent): void {
+export function emitTaskCreated(data: TaskEvent) {
   try {
     const io = getSocketServer();
-    const projectRoom = RoomNames.project(event.projectId);
-
-    io.to(projectRoom).emit('task:moved', event);
-
-    console.log(`📤 Emitted task:moved for task ${event.taskId}`);
+    io.to(RoomNames.project(data.projectId)).emit('task:created', data);
   } catch (error) {
-    console.error('Error emitting task:moved event:', error);
+    console.error('Failed to emit task:created event', {
+      error,
+      taskId: data.taskId,
+    });
   }
 }
 
 /**
- * Emit comment created event
+ * Emits a 'task:updated' event to the project room.
+ * @param data - Task update event data.
  */
-export function emitCommentCreated(event: CommentEvent): void {
+export function emitTaskUpdated(data: TaskEvent) {
   try {
     const io = getSocketServer();
-    const taskRoom = RoomNames.task(event.taskId);
-
-    io.to(taskRoom).emit('comment:created', event);
-
-    console.log(`📤 Emitted comment:created for task ${event.taskId}`);
+    io.to(RoomNames.project(data.projectId)).emit('task:updated', data);
   } catch (error) {
-    console.error('Error emitting comment:created event:', error);
+    console.error('Failed to emit task:updated event', {
+      error,
+      taskId: data.taskId,
+    });
   }
 }
 
 /**
- * Emit comment updated event
+ * Emits a 'task:deleted' event to the project room.
+ * @param data - Task deletion event data.
  */
-export function emitCommentUpdated(event: CommentEvent): void {
+export function emitTaskDeleted(data: TaskEvent) {
   try {
     const io = getSocketServer();
-    const taskRoom = RoomNames.task(event.taskId);
-
-    io.to(taskRoom).emit('comment:updated', event);
-
-    console.log(`📤 Emitted comment:updated for comment ${event.commentId}`);
+    io.to(RoomNames.project(data.projectId)).emit('task:deleted', data);
   } catch (error) {
-    console.error('Error emitting comment:updated event:', error);
-  }
-}
-
-/**
- * Emit comment deleted event
- */
-export function emitCommentDeleted(event: CommentEvent): void {
-  try {
-    const io = getSocketServer();
-    const taskRoom = RoomNames.task(event.taskId);
-
-    io.to(taskRoom).emit('comment:deleted', event);
-
-    console.log(`📤 Emitted comment:deleted for comment ${event.commentId}`);
-  } catch (error) {
-    console.error('Error emitting comment:deleted event:', error);
-  }
-}
-
-/**
- * Emit member joined event
- */
-export function emitMemberJoined(event: MemberEvent): void {
-  try {
-    const io = getSocketServer();
-    const workspaceRoom = RoomNames.workspace(event.workspaceId);
-
-    io.to(workspaceRoom).emit('member:joined', event);
-
-    console.log(`📤 Emitted member:joined for workspace ${event.workspaceId}`);
-  } catch (error) {
-    console.error('Error emitting member:joined event:', error);
-  }
-}
-
-/**
- * Emit member left event
- */
-export function emitMemberLeft(event: MemberEvent): void {
-  try {
-    const io = getSocketServer();
-    const workspaceRoom = RoomNames.workspace(event.workspaceId);
-
-    io.to(workspaceRoom).emit('member:left', event);
-
-    console.log(`📤 Emitted member:left for workspace ${event.workspaceId}`);
-  } catch (error) {
-    console.error('Error emitting member:left event:', error);
-  }
-}
-
-/**
- * Emit member role changed event
- */
-export function emitMemberRoleChanged(event: MemberEvent): void {
-  try {
-    const io = getSocketServer();
-    const workspaceRoom = RoomNames.workspace(event.workspaceId);
-
-    io.to(workspaceRoom).emit('member:role_changed', event);
-
-    console.log(`📤 Emitted member:role_changed for workspace ${event.workspaceId}`);
-  } catch (error) {
-    console.error('Error emitting member:role_changed event:', error);
+    console.error('Failed to emit task:deleted event', {
+      error,
+      taskId: data.taskId,
+    });
   }
 }

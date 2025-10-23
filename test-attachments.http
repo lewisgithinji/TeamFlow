@@ -1,0 +1,59 @@
+### TeamFlow File Attachments API Testing
+### Make sure the server is running on http://localhost:4000
+
+@baseUrl = http://localhost:4000/api
+@token =
+
+### 1. Login to get auth token
+POST {{baseUrl}}/auth/login HTTP/1.1
+Content-Type: application/json
+
+{
+  "email": "admin@teamflow.com",
+  "password": "admin123"
+}
+
+### 2. Get tasks list (replace projectId with actual ID)
+GET {{baseUrl}}/projects/YOUR_PROJECT_ID/tasks HTTP/1.1
+Authorization: Bearer {{token}}
+
+### 3. Get task attachments
+GET {{baseUrl}}/tasks/YOUR_TASK_ID/attachments HTTP/1.1
+Authorization: Bearer {{token}}
+
+### 4. Request upload URL
+POST {{baseUrl}}/tasks/YOUR_TASK_ID/attachments/upload-url HTTP/1.1
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "filename": "test-screenshot.png",
+  "mimeType": "image/png",
+  "size": 102400
+}
+
+### 5. Finalize attachment after upload
+POST {{baseUrl}}/tasks/YOUR_TASK_ID/attachments HTTP/1.1
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "filename": "test-screenshot.png",
+  "originalName": "Screenshot 2024-01-15.png",
+  "storageKey": "attachments/task-123/abc-def.png",
+  "mimeType": "image/png",
+  "size": 102400,
+  "checksum": "sha256:abc123",
+  "metadata": {
+    "width": 1920,
+    "height": 1080
+  }
+}
+
+### 6. Get download URL
+GET {{baseUrl}}/attachments/YOUR_ATTACHMENT_ID/download HTTP/1.1
+Authorization: Bearer {{token}}
+
+### 7. Delete attachment
+DELETE {{baseUrl}}/attachments/YOUR_ATTACHMENT_ID HTTP/1.1
+Authorization: Bearer {{token}}

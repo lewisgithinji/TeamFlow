@@ -35,7 +35,14 @@ export default function SortableTaskCard({ task, onDelete, onEdit, onClick }: So
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <TaskCard task={task} onDelete={onDelete} onEdit={onEdit} onClick={onClick} isDragging={isDragging} />
+      <TaskCard
+        task={task}
+        onDelete={onDelete}
+        onEdit={onEdit}
+        onClick={onClick}
+        isDragging={isDragging}
+        dragHandleProps={listeners}
+      />
     </div>
   );
 }

@@ -1,5 +1,7 @@
 'use client';
 
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner'; // A popular toast library that works well with Next.js
 import { useEffect, useCallback, useRef, useState } from 'react';
 import { useWebSocket } from './WebSocketContext';
 import type {
@@ -9,7 +11,10 @@ import type {
   PresenceEvent,
   TypingEvent,
   UsersViewingEvent,
-} from './types';
+  UserPresence,
+} from './types'; // This is a local re-export
+
+import type { NotificationEvent } from '@teamflow/types'; // Import directly from shared package
 
 /**
  * Hook to listen to specific WebSocket events
@@ -110,6 +115,49 @@ export function useUsersViewing(taskId: string | null) {
       // Could emit a "stopped viewing" event here if needed
     };
   }, [taskId, isConnected, setViewingTask]);
+}
+
+/**
+ * Hook to manage and display user presence for a specific task.
+ * It informs the server that the current user is viewing the task
+ * and subscribes to real-time updates about other viewers.
+ *
+ * @param taskId The ID of the task to track presence for.
+ * @returns An array of users currently viewing the task.
+ */
+export function usePresence(taskId: string | null) {
+  const { setViewingTask, leaveRoom } = useWebSocket();
+  const [viewingUsers, setViewingUsers] = useState<UserPresence[]>([]);
+
+  // 1. Inform the server when the user starts viewing a task.
+  //    This should trigger the backend to add the user to the task's presence list
+  //    and broadcast the updated list to the task room.
+  useEffect(() => {
+    if (taskId) {
+      setViewingTask(taskId);
+    }
+
+    // When the component unmounts or the taskId changes, clear the local state.
+    // The backend should handle the user leaving the presence list on socket disconnect
+    // or via a 'room:leave' event if you implement that.
+    return () => {
+      setViewingUsers([]);
+      if (taskId) {
+        // Optional: Explicitly tell the backend we're leaving.
+        // This requires a 'presence:stopped_viewing' handler on the backend.
+        // leaveRoom({ taskId });
+      }
+    };
+  }, [taskId, setViewingTask, leaveRoom]);
+
+  // 2. Listen for the broadcasted list of users viewing the task.
+  useWebSocketEvent<UsersViewingEvent>('presence:users_viewing', (data) => {
+    if (data.taskId === taskId) {
+      setViewingUsers(data.users);
+    }
+  });
+
+  return viewingUsers;
 }
 
 /**
@@ -218,9 +266,7 @@ export function useAutoJoinRooms(data: {
  * Hook to get typing users for a task
  */
 export function useTypingUsers(taskId: string) {
-  const [typingUsers, setTypingUsers] = useState<
-    Array<{ userId: string; name: string }>
-  >([]);
+  const [typingUsers, setTypingUsers] = useState<Array<{ userId: string; name: string }>>([]);
   const timeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
   useWebSocketEvent<TypingEvent>('typing:user_typing', (data) => {
@@ -258,4 +304,32 @@ export function useTypingUsers(taskId: string) {
   });
 
   return typingUsers;
+}
+
+/**
+ * Hook to manage real-time notifications.
+ * Listens for new notifications and provides functionality to invalidate queries.
+ */
+export function useNotifications() {
+  const queryClient = useQueryClient();
+
+  useWebSocketEvent<NotificationEvent['notification']>('notification:new', (notification) => {
+    console.log('🔔 New notification received:', notification);
+
+    // Show a toast notification to the user
+    toast.info(notification.title, {
+      description: notification.message,
+      action: {
+        label: 'View',
+        onClick: () => {
+          // Here you would navigate to the notification.linkUrl
+          console.log(`Navigating to ${notification.linkUrl}`);
+        },
+      },
+    });
+
+    // Invalidate queries to refetch notification data and unread count
+    queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count'] });
+  });
 }

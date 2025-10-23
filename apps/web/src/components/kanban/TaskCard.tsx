@@ -13,6 +13,7 @@ interface TaskCardProps {
   onEdit?: (task: Task) => void;
   onClick?: (task: Task) => void;
   isDragging?: boolean;
+  dragHandleProps?: any;
 }
 
 const priorityColors = {
@@ -22,7 +23,7 @@ const priorityColors = {
   CRITICAL: 'bg-red-100 text-red-800',
 };
 
-export default function TaskCard({ task, onDelete, onEdit, onClick, isDragging = false }: TaskCardProps) {
+export default function TaskCard({ task, onDelete, onEdit, onClick, isDragging = false, dragHandleProps }: TaskCardProps) {
   // Determine card styling based on status
   let statusClasses = 'border-gray-200 bg-white';
   if (task.status === 'IN_PROGRESS') {
@@ -43,7 +44,20 @@ export default function TaskCard({ task, onDelete, onEdit, onClick, isDragging =
       }`}
     >
       <div className="flex items-start justify-between mb-2">
-        <h3 className="font-medium text-gray-900 flex-1 pr-2">{task.title}</h3>
+        <div className="flex items-start gap-2 flex-1">
+          {dragHandleProps && (
+            <button
+              {...dragHandleProps}
+              className="text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing mt-0.5 flex-shrink-0"
+              title="Drag to move"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+              </svg>
+            </button>
+          )}
+          <h3 className="font-medium text-gray-900 flex-1 pr-2">{task.title}</h3>
+        </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           {onEdit && (
             <button

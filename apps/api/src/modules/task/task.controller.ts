@@ -1,174 +1,52 @@
-/**
- * Task Controller
- * Reference: Sprint 1 Planning - User Story 3.1
- * HTTP request handlers for task endpoints
- */
-
 import { Request, Response, NextFunction } from 'express';
 import * as taskService from './task.service';
+import { CreateTaskInput, UpdateTaskInput, UpdateTaskPositionInput } from '@teamflow/validators';
+import { asyncHandler } from '../../utils/asyncHandler';
+import { getTaskById as getTaskByIdFromRepo } from './task.repository';
 
-/**
- * Create a new task
- * POST /api/tasks
- * Task 3.1.2
- */
-export async function createTask(req: Request, res: Response, next: NextFunction) {
-  try {
-    const userId = req.user?.userId;
+export const getTasksByProjectIdHandler = asyncHandler(async (req: Request, res: Response) => {
+  const { projectId } = req.params;
+  const tasks = await taskService.getTasksByProjectId(projectId, req.user!);
+  res.status(200).json({ data: tasks });
+});
 
-    if (!userId) {
-      return res.status(401).json({
-        error: 'Unauthorized',
-        message: 'User not authenticated',
-      });
-    }
+export const getTaskByIdHandler = asyncHandler(async (req: Request, res: Response) => {
+  const { id: taskId } = req.params;
+  const task = await getTaskByIdFromRepo(taskId);
+  res.status(200).json(task);
+});
 
-    const task = await taskService.createTask(userId, req.body);
+export const createTaskHandler = asyncHandler(async (req: Request, res: Response) => {
+  const task = await taskService.createTask(req.body as CreateTaskInput, req.user!);
+  res.status(201).json({ data: task });
+});
 
-    res.status(201).json({
-      message: 'Task created successfully',
-      data: task,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
+export const updateTaskHandler = asyncHandler(async (req: Request, res: Response) => {
+  const { id: taskId } = req.params;
+  const task = await taskService.updateTask(taskId, req.body as UpdateTaskInput, req.user!);
+  res.status(200).json({ data: task });
+});
 
-/**
- * Update a task
- * PATCH /api/tasks/:id
- * Task 3.1.3
- */
-export async function updateTask(req: Request, res: Response, next: NextFunction) {
-  try {
-    const userId = req.user?.userId;
-    const { id } = req.params;
+export const updateTaskPositionHandler = asyncHandler(async (req: Request, res: Response) => {
+  const { id: taskId } = req.params;
+  const result = await taskService.updateTaskPosition(
+    taskId,
+    req.body as UpdateTaskPositionInput,
+    req.user!
+  );
+  res.status(200).json({ data: result });
+});
 
-    if (!userId) {
-      return res.status(401).json({
-        error: 'Unauthorized',
-        message: 'User not authenticated',
-      });
-    }
+export const deleteTaskHandler = asyncHandler(async (req: Request, res: Response) => {
+  const { id: taskId } = req.params;
+  const result = await taskService.deleteTask(taskId, req.user!);
+  res.status(200).json(result);
+});
 
-    const task = await taskService.updateTask(userId, id, req.body);
-
-    res.status(200).json({
-      message: 'Task updated successfully',
-      data: task,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
-
-/**
- * List tasks in a project
- * GET /api/projects/:projectId/tasks
- * Task 3.1.4
- */
-export async function listProjectTasks(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
-  try {
-    const userId = req.user?.userId;
-    const { projectId } = req.params;
-
-    if (!userId) {
-      return res.status(401).json({
-        error: 'Unauthorized',
-        message: 'User not authenticated',
-      });
-    }
-
-    const tasks = await taskService.listProjectTasks(userId, projectId);
-
-    res.status(200).json({
-      data: tasks,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
-
-/**
- * Get task details
- * GET /api/tasks/:id
- * Task 3.1.5
- */
-export async function getTaskById(req: Request, res: Response, next: NextFunction) {
-  try {
-    const userId = req.user?.userId;
-    const { id } = req.params;
-
-    if (!userId) {
-      return res.status(401).json({
-        error: 'Unauthorized',
-        message: 'User not authenticated',
-      });
-    }
-
-    const task = await taskService.getTaskById(userId, id);
-
-    res.status(200).json({
-      data: task,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
-
-/**
- * Delete a task
- * DELETE /api/tasks/:id
- * Task 3.1.6
- */
-export async function deleteTask(req: Request, res: Response, next: NextFunction) {
-  try {
-    const userId = req.user?.userId;
-    const { id } = req.params;
-
-    if (!userId) {
-      return res.status(401).json({
-        error: 'Unauthorized',
-        message: 'User not authenticated',
-      });
-    }
-
-    const result = await taskService.deleteTask(userId, id);
-
-    res.status(200).json(result);
-  } catch (error) {
-    next(error);
-  }
-}
-
-/**
- * Update task position (for drag-and-drop)
- * PATCH /api/tasks/:id/position
- * Task 3.2.1
- */
-export async function updateTaskPosition(req: Request, res: Response, next: NextFunction) {
-  try {
-    const userId = req.user?.userId;
-    const { id } = req.params;
-
-    if (!userId) {
-      return res.status(401).json({
-        error: 'Unauthorized',
-        message: 'User not authenticated',
-      });
-    }
-
-    const task = await taskService.updateTaskPosition(userId, id, req.body);
-
-    res.status(200).json({
-      message: 'Task position updated successfully',
-      data: task,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
+// Export aliases for route compatibility
+export const createTask = createTaskHandler;
+export const getTaskById = getTaskByIdHandler;
+export const updateTask = updateTaskHandler;
+export const updateTaskPosition = updateTaskPositionHandler;
+export const deleteTask = deleteTaskHandler;
+export const listProjectTasks = getTasksByProjectIdHandler;

@@ -32,7 +32,13 @@ interface KanbanBoardProps {
   onTaskClick?: (task: Task) => void;
 }
 
-export default function KanbanBoard({ tasks, projectId, workspaceId, onCreateTask, onTaskClick }: KanbanBoardProps) {
+export default function KanbanBoard({
+  tasks,
+  projectId,
+  workspaceId,
+  onCreateTask,
+  onTaskClick,
+}: KanbanBoardProps) {
   const { updateTaskPosition, updateTask, addTask, deleteTask: removeTask } = useTaskStore();
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -49,17 +55,33 @@ export default function KanbanBoard({ tasks, projectId, workspaceId, onCreateTas
         console.log('📋 Real-time: Task created', data.task);
         if (data.task) {
           addTask(data.task);
-          showNotification(`New task: ${data.task.title}`);
+          showNotification(`New task: ${data.task.title}`, data.updatedBy.avatar);
         }
       }
     },
     onTaskUpdated: (data) => {
       if (projectId && data.projectId === projectId) {
-        console.log('📝 Real-time: Task updated', data.taskId);
+        console.log('📝 Real-time: Task updated', data.taskId, data.updates);
         if (data.updates) {
+          // Always update the task in the store, regardless of who made the change
           updateTask(data.taskId, data.updates);
+
+          // Only show notification if someone else made the change
           if (data.updatedBy.userId !== getCurrentUserId()) {
-            showNotification(`${data.updatedBy.name} updated a task`);
+            // Check if this is a move event by looking for oldStatus
+            if (data.updates.oldStatus && data.updates.newStatus) {
+              showNotification(
+                `${data.updatedBy.name} moved "${data.updates.title}" from ${data.updates.oldStatus} to ${data.updates.newStatus}`,
+                data.updatedBy.avatar
+              );
+            } else {
+              showNotification(
+                `${data.updatedBy.name} updated "${data.updates.title}"`,
+                data.updatedBy.avatar
+              );
+            }
+          } else {
+            console.log('✅ Task updated by current user, UI should refresh automatically');
           }
         }
       }
@@ -68,7 +90,7 @@ export default function KanbanBoard({ tasks, projectId, workspaceId, onCreateTas
       if (projectId && data.projectId === projectId) {
         console.log('🗑️ Real-time: Task deleted', data.taskId);
         removeTask(data.taskId);
-        showNotification(`Task deleted`);
+        showNotification(`Task deleted by ${data.updatedBy.name}`, data.updatedBy.avatar);
       }
     },
     onTaskMoved: (data) => {
@@ -77,7 +99,7 @@ export default function KanbanBoard({ tasks, projectId, workspaceId, onCreateTas
         if (data.updates) {
           updateTask(data.taskId, data.updates);
           if (data.updatedBy.userId !== getCurrentUserId()) {
-            showNotification(`${data.updatedBy.name} moved a task`);
+            showNotification(`${data.updatedBy.name} moved a task`, data.updatedBy.avatar);
           }
         }
       }
@@ -85,9 +107,8 @@ export default function KanbanBoard({ tasks, projectId, workspaceId, onCreateTas
   });
 
   // Helper function to show real-time notifications
-  const showNotification = (message: string) => {
-    setRealtimeNotification(message);
-    setTimeout(() => setRealtimeNotification(null), 3000);
+  const showNotification = (message: string, avatar?: string | null) => {
+    setRealtimeNotification({ message, avatar });
   };
 
   // Helper to get current user ID from localStorage
@@ -219,9 +240,7 @@ export default function KanbanBoard({ tasks, projectId, workspaceId, onCreateTas
           />
         </svg>
         <h3 className="mt-2 text-sm font-semibold text-gray-900">No tasks yet</h3>
-        <p className="mt-1 text-sm text-gray-500">
-          Get started by creating your first task.
-        </p>
+        <p className="mt-1 text-sm text-gray-500">Get started by creating your first task.</p>
         <div className="mt-6">
           <button
             onClick={onCreateTask}
@@ -252,11 +271,40 @@ export default function KanbanBoard({ tasks, projectId, workspaceId, onCreateTas
       {/* Real-time Notification Toast */}
       {realtimeNotification && (
         <div className="fixed top-4 right-4 z-50 animate-slide-in-right">
-          <div className="rounded-lg bg-blue-600 px-4 py-3 text-white shadow-lg flex items-center space-x-3">
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-            <p className="text-sm font-medium">{realtimeNotification}</p>
+          <div className="rounded-lg bg-blue-600 px-4 py-3 text-white shadow-lg flex items-center justify-between space-x-4">
+            <div className="flex items-center space-x-3">
+              {realtimeNotification.avatar ? (
+                <img
+                  src={realtimeNotification.avatar}
+                  alt="User avatar"
+                  className="h-6 w-6 rounded-full"
+                />
+              ) : (
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13 10V3L4 14h7v7l9-11h-7z"
+                  />
+                </svg>
+              )}
+              <p className="text-sm font-medium">{realtimeNotification.message}</p>
+            </div>
+            <button
+              onClick={() => setRealtimeNotification(null)}
+              className="p-1 rounded-full hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-white"
+              aria-label="Dismiss notification"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
           </div>
         </div>
       )}
@@ -268,54 +316,49 @@ export default function KanbanBoard({ tasks, projectId, workspaceId, onCreateTas
         onDragEnd={handleDragEnd}
       >
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <KanbanColumn
-          id="TODO"
-          title="To Do"
-          count={groupedTasks.TODO.length}
-          color="gray"
-          tasks={groupedTasks.TODO}
-          onDeleteTask={handleDeleteTask}
-          onEditTask={handleEditTask}
-          onTaskClick={onTaskClick}
-        />
+          <KanbanColumn
+            id="TODO"
+            title="To Do"
+            count={groupedTasks.TODO.length}
+            color="gray"
+            tasks={groupedTasks.TODO}
+            onDeleteTask={handleDeleteTask}
+            onEditTask={handleEditTask}
+            onTaskClick={onTaskClick}
+          />
 
-        <KanbanColumn
-          id="IN_PROGRESS"
-          title="In Progress"
-          count={groupedTasks.IN_PROGRESS.length}
-          color="blue"
-          tasks={groupedTasks.IN_PROGRESS}
-          onDeleteTask={handleDeleteTask}
-          onEditTask={handleEditTask}
-          onTaskClick={onTaskClick}
-        />
+          <KanbanColumn
+            id="IN_PROGRESS"
+            title="In Progress"
+            count={groupedTasks.IN_PROGRESS.length}
+            color="blue"
+            tasks={groupedTasks.IN_PROGRESS}
+            onDeleteTask={handleDeleteTask}
+            onEditTask={handleEditTask}
+            onTaskClick={onTaskClick}
+          />
 
-        <KanbanColumn
-          id="DONE"
-          title="Done"
-          count={groupedTasks.DONE.length}
-          color="green"
-          tasks={groupedTasks.DONE}
-          onDeleteTask={handleDeleteTask}
-          onEditTask={handleEditTask}
-          onTaskClick={onTaskClick}
-        />
-      </div>
+          <KanbanColumn
+            id="DONE"
+            title="Done"
+            count={groupedTasks.DONE.length}
+            color="green"
+            tasks={groupedTasks.DONE}
+            onDeleteTask={handleDeleteTask}
+            onEditTask={handleEditTask}
+            onTaskClick={onTaskClick}
+          />
+        </div>
 
-      <DragOverlay>
-        {activeTask ? (
-          <div className="rotate-3 opacity-80">
-            <TaskCard task={activeTask} onDelete={() => {}} isDragging />
-          </div>
-        ) : null}
-      </DragOverlay>
+        <DragOverlay>
+          {activeTask ? (
+            <div className="rotate-3 opacity-80">
+              <TaskCard task={activeTask} onDelete={() => {}} isDragging />
+            </div>
+          ) : null}
+        </DragOverlay>
 
-      {editingTask && (
-        <EditTaskModal
-          task={editingTask}
-          onClose={() => setEditingTask(null)}
-        />
-      )}
+        {editingTask && <EditTaskModal task={editingTask} onClose={() => setEditingTask(null)} />}
       </DndContext>
     </>
   );

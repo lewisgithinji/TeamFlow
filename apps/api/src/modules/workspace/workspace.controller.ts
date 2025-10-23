@@ -14,7 +14,7 @@ export async function createWorkspace(
 ) {
   try {
     // @ts-ignore - user added by auth middleware
-    const userId = req.user?.userId;
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({
@@ -42,7 +42,7 @@ export async function createWorkspace(
 export async function listUserWorkspaces(req: Request, res: Response, next: NextFunction) {
   try {
     // @ts-ignore - user added by auth middleware
-    const userId = req.user?.userId;
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({
@@ -69,7 +69,7 @@ export async function listUserWorkspaces(req: Request, res: Response, next: Next
 export async function getWorkspaceById(req: Request, res: Response, next: NextFunction) {
   try {
     // @ts-ignore - user added by auth middleware
-    const userId = req.user?.userId;
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({
@@ -108,7 +108,7 @@ export async function updateWorkspace(
 ) {
   try {
     // @ts-ignore - user added by auth middleware
-    const userId = req.user?.userId;
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({
@@ -142,7 +142,7 @@ export async function updateWorkspace(
 export async function deleteWorkspace(req: Request, res: Response, next: NextFunction) {
   try {
     // @ts-ignore - user added by auth middleware
-    const userId = req.user?.userId;
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({
@@ -169,6 +169,39 @@ export async function deleteWorkspace(req: Request, res: Response, next: NextFun
           message: error.message,
         });
       }
+    }
+    next(error);
+  }
+}
+
+/**
+ * Get workspace members
+ * GET /api/workspaces/:workspaceId/members
+ */
+export async function getWorkspaceMembers(req: Request, res: Response, next: NextFunction) {
+  try {
+    // @ts-ignore - user added by auth middleware
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        error: 'Unauthorized',
+        message: 'Not authenticated',
+      });
+    }
+
+    const { workspaceId } = req.params;
+    const members = await workspaceService.getWorkspaceMembers(workspaceId, userId);
+
+    res.status(200).json({
+      data: members,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('do not have access')) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: error.message,
+      });
     }
     next(error);
   }

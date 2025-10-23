@@ -1,6 +1,2 @@
-// Re-export Prisma types
-export * from '@teamflow/database';
-
-// Export custom types
-export * from './api';
-export * from './socket';
+export * from './websocket';
+// Add other type exports here in the future

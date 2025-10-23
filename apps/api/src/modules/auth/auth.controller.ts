@@ -70,7 +70,7 @@ export async function login(
 export async function getCurrentUser(req: Request, res: Response, next: NextFunction) {
   try {
     // @ts-ignore - user is added by auth middleware
-    const userId = req.user?.userId;
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({

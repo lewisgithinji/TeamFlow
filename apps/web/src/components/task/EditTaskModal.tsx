@@ -7,6 +7,8 @@
 
 import { useState } from 'react';
 import { useTaskStore, type Task } from '@/stores/task.store';
+import { LabelSelector } from '@/components/label';
+import { useParams } from 'next/navigation';
 
 interface EditTaskModalProps {
   task: Task;
@@ -15,11 +17,17 @@ interface EditTaskModalProps {
 
 export default function EditTaskModal({ task, onClose }: EditTaskModalProps) {
   const { updateTaskById } = useTaskStore();
+  const params = useParams();
+  const workspaceId = params.workspaceId as string;
+
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description || '');
   const [status, setStatus] = useState<Task['status']>(task.status);
   const [priority, setPriority] = useState<Task['priority']>(task.priority);
   const [storyPoints, setStoryPoints] = useState(task.storyPoints?.toString() || '');
+  const [labelIds, setLabelIds] = useState<string[]>(
+    task.labels?.map((l) => l.label.id) || []
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -28,15 +36,21 @@ export default function EditTaskModal({ task, onClose }: EditTaskModalProps) {
 
     setIsSubmitting(true);
     try {
-      await updateTaskById(task.id, {
+      const updatedTask = await updateTaskById(task.id, {
         title: title.trim(),
         description: description.trim() || undefined,
         status,
         priority,
         storyPoints: storyPoints ? parseInt(storyPoints) : undefined,
+        labelIds,
       });
+
+      console.log('✅ Task updated successfully:', updatedTask);
+
+      // Close modal after successful update
       onClose();
     } catch (error) {
+      console.error('❌ Failed to update task:', error);
       alert('Failed to update task');
     } finally {
       setIsSubmitting(false);
@@ -147,6 +161,15 @@ export default function EditTaskModal({ task, onClose }: EditTaskModalProps) {
                 placeholder="Enter story points (optional)"
               />
             </div>
+
+            {/* Labels */}
+            {workspaceId && (
+              <LabelSelector
+                workspaceId={workspaceId}
+                selectedLabelIds={labelIds}
+                onChange={setLabelIds}
+              />
+            )}
 
             {/* Status Information */}
             <div className="rounded-md bg-blue-50 p-3">

@@ -1,7 +1,29 @@
 'use client';
 
-import { WebSocketProvider } from '@/lib/websocket';
+import { useState } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ClientWebSocketProvider } from '@/lib/websocket/ClientWebSocketProvider';
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  return <WebSocketProvider>{children}</WebSocketProvider>;
+  // Create QueryClient instance once per component lifecycle
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            staleTime: 60 * 1000, // 1 minute
+            refetchOnWindowFocus: false,
+          },
+        },
+      })
+  );
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ClientWebSocketProvider>
+        {/* NotificationListener is now inside ClientWebSocketProvider */}
+        {children}
+      </ClientWebSocketProvider>
+    </QueryClientProvider>
+  );
 }

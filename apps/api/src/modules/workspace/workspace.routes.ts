@@ -56,4 +56,11 @@ router.delete('/:id', workspaceController.deleteWorkspace);
  */
 router.get('/:workspaceId/projects', projectController.listWorkspaceProjects);
 
+/**
+ * @route   GET /api/workspaces/:workspaceId/members
+ * @desc    Get all members of a workspace
+ * @access  Private
+ */
+router.get('/:workspaceId/members', workspaceController.getWorkspaceMembers);
+
 export default router;

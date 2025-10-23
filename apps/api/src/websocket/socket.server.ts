@@ -9,6 +9,7 @@ import {
   handlePresenceViewing,
   handleTypingStart,
   handleTypingStop,
+  handleDisconnect,
 } from './socket.handlers';
 import { setupRedisAdapter } from './socket.redis';
 
@@ -72,6 +73,9 @@ export async function initializeSocketServer(httpServer: HttpServer): Promise<Ty
     // Disconnection event
     socket.on('disconnect', (reason) => {
       console.log(`❌ Client disconnected: ${user.email} (${socket.id}) - Reason: ${reason}`);
+
+      // Clean up user's presence state
+      handleDisconnect(socket);
 
       // Emit user offline status
       socket.broadcast.emit('presence:user_offline', {

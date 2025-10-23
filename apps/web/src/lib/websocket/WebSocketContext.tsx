@@ -24,13 +24,9 @@ export function WebSocketProvider({
   url = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000',
   autoConnect = true,
 }: WebSocketProviderProps) {
-  const [socket, setSocket] = useState<Socket<ServerToClientEvents, ClientToServerEvents> | null>(
-    null
-  );
+  const socketRef = useRef<Socket<ServerToClientEvents, ClientToServerEvents> | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [error, setError] = useState<string | null>(null);
-  const socketRef = useRef<Socket<ServerToClientEvents, ClientToServerEvents> | null>(null);
-  const cleanupTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const isConnected = connectionStatus === 'connected';
 
@@ -38,18 +34,17 @@ export function WebSocketProvider({
   useEffect(() => {
     if (!autoConnect) return;
 
-    // Clear any pending cleanup
-    if (cleanupTimeoutRef.current) {
-      clearTimeout(cleanupTimeoutRef.current);
-      cleanupTimeoutRef.current = null;
-    }
-
     // Get JWT token from localStorage
     const token = localStorage.getItem('token');
 
     if (!token) {
-      console.warn('🔌 WebSocket: No authentication token found');
-      setError('No authentication token');
+      // User not logged in yet - silently skip WebSocket connection
+      setConnectionStatus('disconnected');
+      return;
+    }
+
+    // Prevent creating a new socket if one already exists or is connecting
+    if (socketRef.current) {
       return;
     }
 
@@ -58,6 +53,7 @@ export function WebSocketProvider({
 
     // Create socket instance
     const newSocket = io(url, {
+      // forceNew: true, // Use this if you still face issues
       auth: { token },
       transports: ['websocket', 'polling'],
       reconnection: true,
@@ -65,6 +61,8 @@ export function WebSocketProvider({
       reconnectionDelayMax: 5000,
       reconnectionAttempts: 5,
     });
+
+    socketRef.current = newSocket;
 
     // Connection events
     newSocket.on('connect', () => {
@@ -141,19 +139,13 @@ export function WebSocketProvider({
       });
     }
 
-    socketRef.current = newSocket;
-    setSocket(newSocket);
-
-    // Cleanup on unmount - delayed to handle React Strict Mode
+    // Cleanup on unmount
     return () => {
       console.log('🔌 WebSocket: Cleanup initiated');
-      // Delay cleanup to prevent React Strict Mode from disconnecting immediately
-      cleanupTimeoutRef.current = setTimeout(() => {
-        console.log('🔌 WebSocket: Disconnecting');
-        newSocket.removeAllListeners();
-        newSocket.disconnect();
+      if (socketRef.current) {
+        socketRef.current.disconnect();
         socketRef.current = null;
-      }, 100);
+      }
     };
   }, [url, autoConnect]);
 
@@ -225,7 +217,7 @@ export function WebSocketProvider({
   );
 
   const value: WebSocketContextValue = {
-    socket,
+    socket: socketRef.current, // Provide the socket from the ref
     isConnected,
     connectionStatus,
     error,

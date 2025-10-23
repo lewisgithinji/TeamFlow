@@ -1,98 +1,67 @@
-/**
- * Task Service
- * Reference: Sprint 1 Planning - User Story 3.1
- * Business logic for task management
- */
-
+import { Prisma, User } from '@prisma/client';
 import { prisma } from '@teamflow/database';
-import type { TaskStatus, TaskPriority } from '@teamflow/database';
-import {
-  emitTaskCreated,
-  emitTaskUpdated,
-  emitTaskDeleted,
-  emitTaskMoved
-} from '../../websocket/socket.events';
+import type { TaskEvent } from '@teamflow/types';
+import { redis } from '../../redis';
+import { emitTaskCreated, emitTaskUpdated, emitTaskDeleted } from '../../websocket/socket.events';
+import { NotFoundError } from '../../utils/errors';
+import { createNotification } from '../notification/notification.service';
+import { CreateTaskInput, UpdateTaskInput, UpdateTaskPositionInput } from '@teamflow/validators';
+import { getTaskById } from './task.repository';
+import * as slackNotifications from '../slack/slack.notifications';
+import { executeAutomations } from '../automation/automation.executor';
 
-export interface CreateTaskInput {
-  projectId: string;
-  title: string;
-  description?: string;
-  status?: TaskStatus;
-  priority?: TaskPriority;
-  storyPoints?: number;
-  dueDate?: Date;
-  assigneeIds?: string[];
-  labelIds?: string[];
-}
-
-export interface UpdateTaskInput {
-  title?: string;
-  description?: string;
-  status?: TaskStatus;
-  priority?: TaskPriority;
-  storyPoints?: number;
-  dueDate?: Date;
-  assigneeIds?: string[];
-  labelIds?: string[];
-}
-
-export interface UpdateTaskPositionInput {
-  status: TaskStatus;
-  position: number;
-}
-
-/**
- * Create a new task
- * Task 3.1.2: Create task API endpoint
- */
-export async function createTask(userId: string, input: CreateTaskInput) {
-  const { projectId, assigneeIds, labelIds, ...taskData } = input;
-
-  // Verify user has access to the project
-  const project = await prisma.project.findFirst({
-    where: {
-      id: projectId,
-      workspace: {
-        members: {
-          some: {
-            userId,
-          },
+const taskWithDetails = {
+  include: {
+    assignees: {
+      include: {
+        user: {
+          select: { id: true, name: true, avatar: true },
         },
       },
     },
+    labels: {
+      include: {
+        label: {
+          select: { id: true, name: true, color: true },
+        },
+      },
+    },
+    project: {
+      select: {
+        workspaceId: true,
+      },
+    },
+  },
+};
+
+export async function getTasksByProjectId(projectId: string) {
+  return prisma.task.findMany({
+    where: { projectId },
+    orderBy: { position: 'asc' },
+    ...taskWithDetails,
+  });
+}
+
+export async function createTask(data: CreateTaskInput, user: User) {
+  const { assigneeIds, labelIds, ...taskData } = data;
+
+  // Get the highest position for the new task
+  const highestPosition = await prisma.task.aggregate({
+    where: { projectId: taskData.projectId },
+    _max: { position: true },
   });
 
-  if (!project) {
-    throw new Error('Project not found or you do not have access');
-  }
+  const newPosition = (highestPosition._max.position ?? -1) + 1;
 
-  // Get the highest position in the TODO column (or default status)
-  const maxPosition = await prisma.task.findFirst({
-    where: {
-      projectId,
-      status: taskData.status || 'TODO',
-    },
-    orderBy: {
-      position: 'desc',
-    },
-    select: {
-      position: true,
-    },
-  });
-
-  const position = maxPosition ? maxPosition.position + 1 : 0;
-
-  // Create task with assignees and labels
-  const task = await prisma.task.create({
+  const createdTask = await prisma.task.create({
     data: {
       ...taskData,
-      projectId,
-      createdBy: userId,
-      position,
+      createdBy: user.id,
+      position: newPosition,
       assignees: assigneeIds
         ? {
-            create: assigneeIds.map((assigneeId) => ({
-              userId: assigneeId,
+            create: assigneeIds.map((userId) => ({
+              userId,
             })),
           }
         : undefined,
@@ -104,466 +73,409 @@ export async function createTask(userId: string, input: CreateTaskInput) {
           }
         : undefined,
     },
-    include: {
-      assignees: {
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              avatar: true,
-            },
-          },
-        },
-      },
-      labels: {
-        include: {
-          label: true,
-        },
-      },
-      creator: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          avatar: true,
-        },
-      },
-    },
+    ...taskWithDetails,
   });
 
-  // Emit real-time event
-  emitTaskCreated({
-    taskId: task.id,
-    projectId,
-    task,
-    createdBy: {
-      userId,
-      name: task.creator?.name || 'Unknown',
+  // Emit a real-time event for task creation
+  const eventData: TaskEvent = {
+    taskId: createdTask.id,
+    projectId: createdTask.projectId,
+    workspaceId: createdTask.project.workspaceId,
+    task: createdTask, // Send the full task object on creation
+    updatedBy: {
+      userId: user.id,
+      name: user.name,
+      avatar: user.avatar,
     },
+  };
+  emitTaskCreated(eventData);
+
+  // Execute automation rules for task creation
+  executeAutomations('TASK_CREATED', {
+    task: createdTask as any,
+    workspaceId: createdTask.project.workspaceId,
+    userId: user.id,
+  }).catch((error) => {
+    console.error('Failed to execute automations for task creation:', error);
   });
 
-  return task;
-}
+  // Notify newly assigned users
+  if (assigneeIds && assigneeIds.length > 0) {
+    for (const assigneeId of assigneeIds) {
+      // Don't notify the user if they assign the task to themselves
+      if (assigneeId === user.id) continue;
 
-/**
- * Update a task
- * Task 3.1.3: Update task API endpoint
- */
-export async function updateTask(
-  userId: string,
-  taskId: string,
-  input: UpdateTaskInput
-) {
-  const { assigneeIds, labelIds, ...taskData } = input;
-
-  // Verify user has access to the task
-  const existingTask = await prisma.task.findFirst({
-    where: {
-      id: taskId,
-      project: {
-        workspace: {
-          members: {
-            some: {
-              userId,
-            },
-          },
+      await createNotification({
+        userId: assigneeId,
+        type: 'TASK_ASSIGNED',
+        title: 'You have been assigned a new task',
+        message: `${user.name} assigned you to the task: "${createdTask.title}"`,
+        linkUrl: `/tasks/${createdTask.id}`, // Example URL
+        metadata: {
+          taskId: createdTask.id,
+          assignerId: user.id,
         },
-      },
-    },
-  });
+      });
+    }
 
-  if (!existingTask) {
-    throw new Error('Task not found or you do not have access');
+    // Send Slack notifications to newly assigned users
+    for (const assigneeId of assigneeIds) {
+      if (assigneeId === user.id) continue;
+
+      const assignee = await prisma.user.findUnique({
+        where: { id: assigneeId }
+      });
+
+      if (assignee) {
+        await slackNotifications.notifyTaskAssignment({
+          task: createdTask,
+          assignee,
+          assignedBy: user,
+        }).catch((error) => {
+          // Log error but don't block task creation if Slack notification fails
+          console.error('Failed to send Slack notification for task assignment:', error);
+        });
+      }
+    }
   }
 
-  // Update task with optional assignee and label updates
-  const task = await prisma.task.update({
-    where: { id: taskId },
-    data: {
-      ...taskData,
-      version: {
-        increment: 1, // For optimistic locking
-      },
-      assignees:
-        assigneeIds !== undefined
-          ? {
-              deleteMany: {},
-              create: assigneeIds.map((assigneeId) => ({
-                userId: assigneeId,
-              })),
-            }
-          : undefined,
-      labels:
-        labelIds !== undefined
-          ? {
-              deleteMany: {},
-              create: labelIds.map((labelId) => ({
-                labelId,
-              })),
-            }
-          : undefined,
-    },
-    include: {
-      assignees: {
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              avatar: true,
-            },
-          },
-        },
-      },
-      labels: {
-        include: {
-          label: true,
-        },
-      },
-      creator: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          avatar: true,
-        },
-      },
-    },
-  });
+  return createdTask;
+}
 
-  // Get user info for the emitter
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { name: true },
-  });
+export async function updateTask(taskId: string, data: UpdateTaskInput, user: User) {
+  const { assigneeIds, labelIds, ...taskData } = data;
 
-  // Emit real-time event
-  // If status changed, emit task:moved, otherwise emit task:updated
-  const statusChanged = input.status && existingTask.status !== input.status;
+  // Fetch the current task to compare assignees for notifications
+  const currentTask = await getTaskById(taskId);
+  if (!currentTask) {
+    throw new NotFoundError('Task');
+  }
 
+  const cacheKey = `task:${taskId}`;
+  const statusChanged = data.status && data.status !== currentTask.status;
+
+  // Logic to calculate which assignees to add and remove
+  let assigneeUpdate = undefined;
+  if (assigneeIds) {
+    const currentAssigneeIds = new Set(currentTask.assignees.map((a) => a.user.id));
+    const newAssigneeIds = new Set(assigneeIds);
+
+    const assigneesToAdd = assigneeIds.filter((id) => !currentAssigneeIds.has(id));
+    const assigneesToRemove = [...currentAssigneeIds].filter((id) => !newAssigneeIds.has(id));
+
+    assigneeUpdate = {
+      create: assigneesToAdd.map((userId) => ({ userId })),
+      deleteMany: { userId: { in: assigneesToRemove } },
+    };
+  }
+
+  // Logic to calculate which labels to add and remove
+  let labelUpdate = undefined;
+  if (labelIds !== undefined) {
+    const currentLabelIds = new Set(currentTask.labels?.map((l: any) => l.label.id) || []);
+    const newLabelIds = new Set(labelIds);
+
+    const labelsToAdd = labelIds.filter((id) => !currentLabelIds.has(id));
+    const labelsToRemove = [...currentLabelIds].filter((id) => !newLabelIds.has(id));
+
+    labelUpdate = {
+      create: labelsToAdd.map((labelId) => ({ labelId })),
+      deleteMany: labelsToRemove.length > 0 ? labelsToRemove.map((labelId) => ({ labelId })) : undefined,
+    };
+  }
+
+  let updatedTask;
+
+  // If status changed, we need to handle position recalculation
   if (statusChanged) {
-    emitTaskMoved({
-      taskId: task.id,
-      projectId: existingTask.projectId,
-      updates: taskData,
-      updatedBy: {
-        userId,
-        name: user?.name || 'Unknown',
-      },
+    const oldStatus = currentTask.status;
+    const newStatus = data.status!;
+    const projectId = currentTask.projectId;
+
+    // Get the last position in the new status column
+    const highestPositionInNewColumn = await prisma.task.aggregate({
+      where: { projectId, status: newStatus },
+      _max: { position: true },
+    });
+
+    const newPosition = (highestPositionInNewColumn._max.position ?? -1) + 1;
+
+    // Use transaction to handle position updates
+    updatedTask = await prisma.$transaction(async (tx) => {
+      // 1. Remove the task from its old position by shifting subsequent tasks down
+      await tx.task.updateMany({
+        where: {
+          projectId,
+          status: oldStatus,
+          position: { gt: currentTask.position },
+        },
+        data: {
+          position: { decrement: 1 },
+        },
+      });
+
+      // 2. Update the task with new data and position
+      return tx.task.update({
+        where: { id: taskId },
+        data: {
+          ...taskData,
+          position: newPosition,
+          version: { increment: 1 },
+          assignees: assigneeUpdate,
+          labels: labelUpdate,
+        },
+        ...taskWithDetails,
+      });
     });
   } else {
-    emitTaskUpdated({
-      taskId: task.id,
-      projectId: existingTask.projectId,
-      updates: taskData,
-      updatedBy: {
-        userId,
-        name: user?.name || 'Unknown',
+    // No status change, just update the task normally
+    updatedTask = await prisma.task.update({
+      where: { id: taskId },
+      data: {
+        ...taskData,
+        version: { increment: 1 }, // For optimistic locking
+        assignees: assigneeUpdate,
+        labels: labelUpdate,
       },
+      ...taskWithDetails,
     });
   }
 
-  return task;
-}
+  // Invalidate cache by deleting the old entry.
+  // The next `getTaskById` call will repopulate it.
+  await redis.del(cacheKey);
 
-/**
- * List tasks in a project
- * Task 3.1.4: List tasks in project endpoint
- */
-export async function listProjectTasks(userId: string, projectId: string) {
-  // Verify user has access to the project
-  const project = await prisma.project.findFirst({
-    where: {
-      id: projectId,
-      workspace: {
-        members: {
-          some: {
-            userId,
-          },
+  // Notify only the newly added assignees
+  if (assigneeIds) {
+    const oldAssigneeIds = new Set(currentTask.assignees.map((a) => a.user.id));
+    const newAssignees = assigneeIds.filter((id) => !oldAssigneeIds.has(id));
+
+    for (const assigneeId of newAssignees) {
+      if (assigneeId === user.id) continue;
+
+      await createNotification({
+        userId: assigneeId,
+        type: 'TASK_ASSIGNED',
+        title: 'You have been assigned to a task',
+        message: `${user.name} assigned you to the task: "${updatedTask.title}"`,
+        linkUrl: `/tasks/${updatedTask.id}`,
+        metadata: {
+          taskId: updatedTask.id,
+          assignerId: user.id,
         },
-      },
-    },
-  });
+      });
+    }
 
-  if (!project) {
-    throw new Error('Project not found or you do not have access');
+    // Send Slack notifications to newly added assignees
+    for (const assigneeId of newAssignees) {
+      if (assigneeId === user.id) continue;
+
+      const assignee = await prisma.user.findUnique({
+        where: { id: assigneeId }
+      });
+
+      if (assignee) {
+        await slackNotifications.notifyTaskAssignment({
+          task: updatedTask,
+          assignee,
+          assignedBy: user,
+        }).catch((error) => {
+          console.error('Failed to send Slack notification for task assignment:', error);
+        });
+      }
+    }
   }
 
-  const tasks = await prisma.task.findMany({
-    where: {
-      projectId,
-    },
-    include: {
-      assignees: {
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              avatar: true,
-            },
-          },
-        },
-      },
-      labels: {
-        include: {
-          label: true,
-        },
-      },
-      creator: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          avatar: true,
-        },
-      },
-    },
-    orderBy: [
-      {
-        status: 'asc',
-      },
-      {
-        position: 'asc',
-      },
-    ],
-  });
-
-  return tasks;
-}
-
-/**
- * Get task by ID
- * Task 3.1.5: Get task details endpoint
- */
-export async function getTaskById(userId: string, taskId: string) {
-  const task = await prisma.task.findFirst({
-    where: {
-      id: taskId,
-      project: {
-        workspace: {
-          members: {
-            some: {
-              userId,
-            },
-          },
-        },
-      },
-    },
-    include: {
-      assignees: {
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              avatar: true,
-            },
-          },
-        },
-      },
-      labels: {
-        include: {
-          label: true,
-        },
-      },
-      creator: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          avatar: true,
-        },
-      },
-      project: {
-        select: {
-          id: true,
-          name: true,
-          workspaceId: true,
-        },
-      },
-      comments: {
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              avatar: true,
-            },
-          },
-        },
-        orderBy: {
-          createdAt: 'desc',
-        },
-      },
-    },
-  });
-
-  if (!task) {
-    throw new Error('Task not found or you do not have access');
+  // Send Slack notification for status changes
+  if (statusChanged) {
+    await slackNotifications.notifyStatusChange({
+      task: updatedTask,
+      oldStatus: currentTask.status,
+      newStatus: updatedTask.status,
+      changedBy: user,
+    }).catch((error) => {
+      console.error('Failed to send Slack notification for status change:', error);
+    });
   }
 
-  return task;
-}
-
-/**
- * Delete a task (soft delete)
- * Task 3.1.6: Delete task API endpoint
- */
-export async function deleteTask(userId: string, taskId: string) {
-  // Verify user has access to the task and is creator or workspace admin
-  const task = await prisma.task.findFirst({
-    where: {
-      id: taskId,
-      project: {
-        workspace: {
-          members: {
-            some: {
-              userId,
-              OR: [
-                { role: 'OWNER' },
-                { role: 'ADMIN' },
-                // Allow creator to delete their own task
-                {
-                  user: {
-                    createdTasks: {
-                      some: {
-                        id: taskId,
-                      },
-                    },
-                  },
-                },
-              ],
-            },
-          },
-        },
-      },
+  // Emit a real-time event to all clients in the project room
+  const eventData: TaskEvent = {
+    taskId: updatedTask.id,
+    projectId: updatedTask.projectId,
+    workspaceId: updatedTask.project.workspaceId,
+    updates: {
+      ...data,
+      // Add title for more descriptive notifications
+      title: updatedTask.title,
+      // Include old and new status for status change notifications
+      ...(statusChanged && {
+        oldStatus: currentTask.status,
+        newStatus: updatedTask.status,
+        position: updatedTask.position,
+      }),
     },
-  });
+    updatedBy: {
+      userId: user.id,
+      name: user.name,
+      avatar: user.avatar,
+    },
+  };
+  emitTaskUpdated(eventData);
 
-  if (!task) {
-    throw new Error(
-      'Task not found or you do not have permission to delete it'
-    );
+  // Execute automation rules based on what changed
+  if (statusChanged) {
+    executeAutomations('TASK_STATUS_CHANGED', {
+      task: updatedTask as any,
+      previousTask: currentTask as any,
+      workspaceId: updatedTask.project.workspaceId,
+      userId: user.id,
+    }).catch((error) => {
+      console.error('Failed to execute automations for status change:', error);
+    });
   }
 
-  // Hard delete for now (can change to soft delete later)
-  await prisma.task.delete({
-    where: { id: taskId },
-  });
+  if (data.priority && data.priority !== currentTask.priority) {
+    executeAutomations('TASK_PRIORITY_CHANGED', {
+      task: updatedTask as any,
+      previousTask: currentTask as any,
+      workspaceId: updatedTask.project.workspaceId,
+      userId: user.id,
+    }).catch((error) => {
+      console.error('Failed to execute automations for priority change:', error);
+    });
+  }
 
-  // Get user info for the emitter
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { name: true },
-  });
+  if (assigneeIds) {
+    const oldAssigneeIds = new Set(currentTask.assignees.map((a) => a.user.id));
+    const newAssigneeIds = new Set(assigneeIds);
+    if (oldAssigneeIds.size !== newAssigneeIds.size ||
+        ![...oldAssigneeIds].every(id => newAssigneeIds.has(id))) {
+      executeAutomations('TASK_ASSIGNED', {
+        task: updatedTask as any,
+        previousTask: currentTask as any,
+        workspaceId: updatedTask.project.workspaceId,
+        userId: user.id,
+      }).catch((error) => {
+        console.error('Failed to execute automations for task assignment:', error);
+      });
+    }
+  }
 
-  // Emit real-time event
-  emitTaskDeleted({
-    taskId,
-    projectId: task.projectId,
-    deletedBy: {
-      userId,
-      name: user?.name || 'Unknown',
+  if (data.dueDate && !currentTask.dueDate) {
+    executeAutomations('TASK_DUE_DATE_SET', {
+      task: updatedTask as any,
+      previousTask: currentTask as any,
+      workspaceId: updatedTask.project.workspaceId,
+      userId: user.id,
+    }).catch((error) => {
+      console.error('Failed to execute automations for due date set:', error);
+    });
+  }
+
+  return updatedTask;
+}
+
+export async function deleteTask(taskId: string, user: User) {
+  // The permission middleware `isTaskCreatorOrHasRole` already ensures
+  // that the user has the right to delete this task.
+  // We fetch the task details first to get IDs for cache invalidation and events.
+  const taskToDelete = await getTaskById(taskId);
+  if (!taskToDelete) {
+    throw new NotFoundError('Task');
+  }
+
+  await prisma.task.delete({ where: { id: taskId } });
+
+  await redis.del(`task:${taskId}`);
+
+  const eventData: TaskEvent = {
+    taskId: taskToDelete.id,
+    projectId: taskToDelete.projectId,
+    workspaceId: taskToDelete.project.workspaceId,
+    updatedBy: {
+      userId: user.id,
+      name: user.name,
+      avatar: user.avatar,
     },
-  });
+  };
+  emitTaskDeleted(eventData);
 
   return { message: 'Task deleted successfully' };
 }
 
-/**
- * Update task position (for drag-and-drop)
- * Task 3.2.1: Update task position endpoint
- */
 export async function updateTaskPosition(
-  userId: string,
   taskId: string,
-  input: UpdateTaskPositionInput
+  data: UpdateTaskPositionInput,
+  user: User
 ) {
-  // Verify user has access to the task
-  const existingTask = await prisma.task.findFirst({
-    where: {
-      id: taskId,
-      project: {
-        workspace: {
-          members: {
-            some: {
-              userId,
-            },
-          },
-        },
+  const { status: newStatus, position: newPosition } = data;
+
+  const {
+    status: oldStatus,
+    position: oldPosition,
+    projectId,
+    title,
+    project: { workspaceId },
+  } = await getTaskById(taskId);
+
+  await prisma.$transaction(async (tx) => {
+    // 1. Remove the task from its old position by shifting subsequent tasks down.
+    await tx.task.updateMany({
+      where: {
+        projectId,
+        status: oldStatus,
+        position: { gt: oldPosition },
       },
-    },
+      data: {
+        position: { decrement: 1 },
+      },
+    });
+
+    // 2. Make space for the task in its new position by shifting subsequent tasks up.
+    await tx.task.updateMany({
+      where: {
+        projectId,
+        status: newStatus,
+        position: { gte: newPosition },
+      },
+      data: {
+        position: { increment: 1 },
+      },
+    });
+
+    // 3. Finally, update the task itself to its new status and position.
+    await tx.task.update({
+      where: { id: taskId },
+      data: {
+        status: newStatus,
+        position: newPosition,
+        version: { increment: 1 },
+      },
+    });
   });
 
-  if (!existingTask) {
-    throw new Error('Task not found or you do not have access');
-  }
+  // Invalidate the cache for the moved task
+  await redis.del(`task:${taskId}`);
 
-  // Update task status and position
-  const task = await prisma.task.update({
-    where: { id: taskId },
-    data: {
-      status: input.status,
-      position: input.position,
-      version: {
-        increment: 1,
-      },
-    },
-    include: {
-      assignees: {
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              avatar: true,
-            },
-          },
-        },
-      },
-      labels: {
-        include: {
-          label: true,
-        },
-      },
-      creator: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          avatar: true,
-        },
-      },
-    },
-  });
-
-  // Get user info for the emitter
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { name: true },
-  });
-
-  // Emit real-time event for task moved
-  emitTaskMoved({
-    taskId: task.id,
-    projectId: existingTask.projectId,
+  // Emit a real-time event for the move.
+  // Note: Your frontend might listen for 'task:updated' or a new 'task:moved' event.
+  // Using 'task:updated' is often sufficient.
+  emitTaskUpdated({
+    taskId: taskId,
+    projectId: projectId,
+    workspaceId: workspaceId,
     updates: {
-      status: input.status,
-      position: input.position,
+      status: newStatus,
+      position: newPosition,
+      title, // Include task title
+      oldStatus, // Include old status for "moved from X to Y" messages
+      newStatus, // Explicitly include new status
     },
     updatedBy: {
-      userId,
-      name: user?.name || 'Unknown',
+      userId: user.id,
+      name: user.name,
+      avatar: user.avatar,
     },
   });
-
-  return task;
+  return { message: 'Task position updated successfully' };
 }

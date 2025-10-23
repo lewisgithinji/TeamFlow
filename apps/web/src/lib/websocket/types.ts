@@ -1,3 +1,15 @@
+import type {
+  TaskEvent,
+  CommentEvent,
+  MemberEvent,
+  PresenceEvent,
+  UsersViewingEvent,
+  UserPresence,
+  TypingEvent,
+  RoomJoinData,
+  RoomLeaveData,
+} from '@teamflow/types';
+
 /**
  * WebSocket Types for Frontend
  * Matches backend Socket.io event definitions
@@ -34,100 +46,6 @@ export interface ServerToClientEvents {
   'connection:error': (data: { message: string }) => void;
 }
 
-// Client to Server events
-export interface ClientToServerEvents {
-  // Room management
-  'room:join': (data: RoomJoinData) => void;
-  'room:leave': (data: RoomLeaveData) => void;
-
-  // User presence
-  'presence:update': (data: { status: 'online' | 'away' | 'offline' }) => void;
-  'presence:viewing': (data: { taskId: string }) => void;
-
-  // Typing indicators
-  'typing:start': (data: { taskId: string; commentId?: string }) => void;
-  'typing:stop': (data: { taskId: string; commentId?: string }) => void;
-}
-
-// Event payload types
-export interface TaskEvent {
-  taskId: string;
-  projectId: string;
-  workspaceId: string;
-  task?: any; // Full task object
-  updates?: any; // Partial updates
-  updatedBy: {
-    userId: string;
-    name: string;
-  };
-  timestamp: string;
-}
-
-export interface CommentEvent {
-  commentId: string;
-  taskId: string;
-  projectId: string;
-  workspaceId: string;
-  comment?: any; // Full comment object
-  updates?: any; // Partial updates
-  createdBy: {
-    userId: string;
-    name: string;
-  };
-  timestamp: string;
-}
-
-export interface MemberEvent {
-  memberId: string;
-  workspaceId: string;
-  user: {
-    userId: string;
-    name: string;
-    email: string;
-  };
-  role?: string;
-  oldRole?: string;
-  timestamp: string;
-}
-
-export interface PresenceEvent {
-  userId: string;
-  name: string;
-  status: 'online' | 'away' | 'offline';
-  timestamp: string;
-}
-
-export interface UsersViewingEvent {
-  taskId: string;
-  users: UserPresence[];
-}
-
-export interface UserPresence {
-  userId: string;
-  name: string;
-  avatar?: string;
-}
-
-export interface TypingEvent {
-  userId: string;
-  name: string;
-  taskId: string;
-  commentId?: string;
-  timestamp: string;
-}
-
-export interface RoomJoinData {
-  workspaceId?: string;
-  projectId?: string;
-  taskId?: string;
-}
-
-export interface RoomLeaveData {
-  workspaceId?: string;
-  projectId?: string;
-  taskId?: string;
-}
-
 // WebSocket connection state
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
 
@@ -150,3 +68,6 @@ export interface WebSocketContextValue {
   startTyping: (taskId: string, commentId?: string) => void;
   stopTyping: (taskId: string, commentId?: string) => void;
 }
+
+// Re-export shared types for easier consumption within the web app
+export type { TaskEvent, CommentEvent, UsersViewingEvent, UserPresence };

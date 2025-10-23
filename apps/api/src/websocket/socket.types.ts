@@ -1,4 +1,15 @@
 import type { Server as SocketServer, Socket } from 'socket.io';
+import type {
+  TaskEvent,
+  CommentEvent,
+  MemberEvent,
+  PresenceEvent,
+  TypingEvent,
+  UsersViewingEvent,
+  NotificationEvent,
+  UserPresence,
+  RoomJoinData,
+} from '@teamflow/types';
 
 /**
  * Socket.io event types for type-safe event handling
@@ -7,7 +18,7 @@ import type { Server as SocketServer, Socket } from 'socket.io';
 // Client to Server events
 export interface ClientToServerEvents {
   // Room management
-  'room:join': (data: { workspaceId?: string; projectId?: string; taskId?: string }) => void;
+  'room:join': (data: RoomJoinData) => void;
   'room:leave': (data: { workspaceId?: string; projectId?: string; taskId?: string }) => void;
 
   // User presence
@@ -40,11 +51,18 @@ export interface ServerToClientEvents {
   // Presence events
   'presence:user_online': (data: PresenceEvent) => void;
   'presence:user_offline': (data: PresenceEvent) => void;
-  'presence:users_viewing': (data: { taskId: string; users: UserPresence[] }) => void;
+  'presence:users_viewing': (data: UsersViewingEvent) => void;
 
   // Typing events
   'typing:user_typing': (data: TypingEvent) => void;
   'typing:user_stopped': (data: TypingEvent) => void;
+
+  // Notification events
+  'notification:new': (data: NotificationEvent['notification']) => void;
+
+  // Attachment events
+  'attachment:added': (data: any) => void;
+  'attachment:deleted': (data: any) => void;
 
   // Connection events
   'connection:error': (data: { message: string }) => void;
@@ -59,68 +77,7 @@ export interface InterServerEvents {
 export interface SocketData {
   userId: string;
   email: string;
-}
-
-// Event payload types
-export interface TaskEvent {
-  taskId: string;
-  projectId: string;
-  workspaceId: string;
-  task?: any; // Full task object
-  updates?: any; // Partial updates
-  updatedBy: {
-    userId: string;
-    name: string;
-  };
-  timestamp: string;
-}
-
-export interface CommentEvent {
-  commentId: string;
-  taskId: string;
-  projectId: string;
-  workspaceId: string;
-  comment?: any; // Full comment object
-  updates?: any; // Partial updates
-  createdBy: {
-    userId: string;
-    name: string;
-  };
-  timestamp: string;
-}
-
-export interface MemberEvent {
-  memberId: string;
-  workspaceId: string;
-  user: {
-    userId: string;
-    name: string;
-    email: string;
-  };
-  role?: string;
-  oldRole?: string;
-  timestamp: string;
-}
-
-export interface PresenceEvent {
-  userId: string;
-  name: string;
-  status: 'online' | 'away' | 'offline';
-  timestamp: string;
-}
-
-export interface UserPresence {
-  userId: string;
-  name: string;
-  avatar?: string;
-}
-
-export interface TypingEvent {
-  userId: string;
-  name: string;
-  taskId: string;
-  commentId?: string;
-  timestamp: string;
+  viewingTaskId?: string; // Track which task the user is currently viewing
 }
 
 // Type-safe Socket.io Server

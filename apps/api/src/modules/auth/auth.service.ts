@@ -1,9 +1,19 @@
 import { prisma } from '@teamflow/database';
 import { hashPassword, verifyPassword } from '../../utils/hash';
 import { generateTokens } from '../../utils/jwt';
-import type { RegisterDto, LoginDto, AuthResponse, ForgotPasswordDto, ResetPasswordDto } from './auth.types';
+import type {
+  RegisterDto,
+  LoginDto,
+  AuthResponse,
+  ForgotPasswordDto,
+  ResetPasswordDto,
+} from './auth.types';
 import { randomBytes } from 'crypto';
-import { sendVerificationEmail, sendPasswordResetEmail, sendWelcomeEmail } from '../../utils/email';
+import {
+  sendVerificationEmail,
+  sendPasswordResetEmail,
+  sendWelcomeEmail,
+} from '../../services/email.service';
 
 /**
  * Register a new user
@@ -38,7 +48,9 @@ export async function registerUser(data: RegisterDto): Promise<AuthResponse> {
   });
 
   // Send verification email (async, don't block registration)
-  console.log(`📧 Sending verification email to ${user.email} with token: ${verificationToken.substring(0, 10)}...`);
+  console.log(
+    `📧 Sending verification email to ${user.email} with token: ${verificationToken.substring(0, 10)}...`
+  );
   sendVerificationEmail(user.email, verificationToken, user.name)
     .then(() => {
       console.log(`✅ Verification email sent successfully to ${user.email}`);
@@ -78,9 +90,7 @@ export async function loginUser(data: LoginDto): Promise<AuthResponse> {
 
   // Check if account is locked
   if (user.lockedUntil && user.lockedUntil > new Date()) {
-    const minutesLeft = Math.ceil(
-      (user.lockedUntil.getTime() - Date.now()) / 1000 / 60
-    );
+    const minutesLeft = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 1000 / 60);
     throw new Error(`Account is locked. Try again in ${minutesLeft} minutes`);
   }
 
