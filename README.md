@@ -19,7 +19,38 @@ Modern, real-time collaboration tool for development teams with intelligent auto
 
 ## 📖 Overview
 
-TeamFlow is a comprehensive project management platform designed specifically for agile development teams. It combines the power of real-time collaboration, intelligent automation, and AI-assisted planning to streamline your workflow.
+Enterprise-grade agile project management platform built for modern development teams. This production-ready full-stack application combines real-time WebSocket collaboration, intelligent workflow automation, AI-powered planning, and seamless third-party integrations (Slack, GitHub) in a scalable monorepo architecture.
+
+### 🎯 Project Highlights
+
+- **Full-Stack Architecture**: Next.js 14 frontend + Express.js backend in Turborepo monorepo with TypeScript throughout
+- **Real-time Collaboration**: WebSocket-powered live updates using Socket.io with Redis adapter for horizontal scaling
+- **Enterprise Features**: Multi-workspace support, JWT auth with refresh tokens, role-based access control, file attachments, activity audit trails
+- **Advanced Integrations**: OAuth-based Slack integration with rich notifications, GitHub API integration for PR tracking (coming soon)
+- **AI-Powered**: GPT-4/Claude integration for intelligent task breakdown and sprint planning automation
+- **Production Infrastructure**: Docker containerization, PostgreSQL 16 + Prisma ORM, Redis caching, Cloudflare R2 storage
+
+This project demonstrates expertise in full-stack TypeScript development, microservices architecture, real-time systems, database design, third-party API integration, and scalable deployment patterns.
+
+**🌐 Live Demo**: Contact for deployment link
+
+### 💼 Key Technologies
+
+| Category               | Technologies                                           |
+| ---------------------- | ------------------------------------------------------ |
+| **Frontend**           | Next.js 14, React 18, TypeScript 5.3, Tailwind CSS 3.4 |
+| **Backend**            | Node.js 20, Express.js, TypeScript 5.3                 |
+| **Database**           | PostgreSQL 16, Prisma ORM, Redis 7                     |
+| **Real-time**          | Socket.io, Redis Adapter                               |
+| **Authentication**     | JWT (Access + Refresh Tokens), RBAC                    |
+| **State Management**   | React Query, Zustand                                   |
+| **Forms & Validation** | React Hook Form, Zod                                   |
+| **Monorepo**           | Turborepo, pnpm Workspaces                             |
+| **Infrastructure**     | Docker, Docker Compose                                 |
+| **AI/ML**              | OpenAI GPT-4, Anthropic Claude                         |
+| **Integrations**       | Slack OAuth API, GitHub API, Resend Email              |
+| **Storage**            | Cloudflare R2                                          |
+| **Deployment**         | Vercel (Frontend), Railway (Backend)                   |
 
 **Built for modern teams who need:**
 
